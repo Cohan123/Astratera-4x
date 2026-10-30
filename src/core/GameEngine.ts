@@ -806,7 +806,11 @@ export class GameEngine {
       targetCoord,
       surface,
       turn,
-      treasuryHolder
+      treasuryHolder,
+      {
+        planetType: this.findPlanetById(colony.planetId)?.planetType,
+        completedTechIds: this.civManager.getPlayerCiv().researchState.completedTechIds,
+      }
     );
     if (res.success) {
       this.eventBus.emit('build:queued', { colonyId, buildingDefId });

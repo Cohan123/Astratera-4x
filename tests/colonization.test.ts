@@ -138,7 +138,7 @@ describe('Astraea 4X - Phase 1, Modul 3 Test Suite (Planeten, Erkundung & Koloni
     });
   });
 
-  it('5. Gasriesen sind deterministisch unbewohnbar und für Kolonisation ausgeschlossen', () => {
+  it('5. Gasriesen sind unbewohnbar, aber als Gasförderung freigegeben', () => {
     const system = createSampleSystem();
     const planets = PlanetGenerator.generateSystemPlanets('SEED-GAS-01', 'SYS-GAS', 'Jupiter-Sys', sampleStar, 8);
     const gasGiant = planets.find((p) => p.planetType === 'gas_giant');
@@ -150,9 +150,13 @@ describe('Astraea 4X - Phase 1, Modul 3 Test Suite (Planeten, Erkundung & Koloni
       expect(assessment.tier).toBe('uninhabitable');
       expect(assessment.canColonizeNormally).toBe(false);
 
+      // Keine normale Bodenkolonie, aber eine reine Gasförderplattform ist
+      // ausdrücklich zulässig; die Gebäuderegeln begrenzen sie auf
+      // Gasförderanlagen (siehe Tests der Bauverwaltung).
       const check = ColonizationValidator.canColonize(gasGiant, system);
-      expect(check.allowed).toBe(false);
-      expect(check.reason).toContain('Gasriesen');
+      expect(check.allowed).toBe(true);
+      expect(check.assessment?.canColonizeNormally).toBe(false);
+      expect(check.assessment?.summary).toContain('Gasförderplattform');
     }
   });
 

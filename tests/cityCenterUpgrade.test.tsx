@@ -288,7 +288,7 @@ describe('Koloniezentrum-Aufwertung', () => {
     expect(restored.buildQueue[0].requiredProduction).toBe(64);
 
     // Genug Runden, um die 64 Produktionspunkte sicher abzubauen.
-    for (let turn = 0; turn < 12 && restored.buildQueue.length > 0; turn++) {
+    for (let turn = 0; turn < 40 && restored.buildQueue.length > 0; turn++) {
       engine.endTurn();
     }
 

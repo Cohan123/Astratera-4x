@@ -5,6 +5,7 @@
  */
 
 import { BUILDING_CATALOG } from '../data/buildingCatalog.ts';
+import { BIOME_CATALOG } from '../data/terrainCatalog.ts';
 import { BuildQueueManager } from './buildQueueManager.ts';
 import { HexMath } from '../surface/hexMath.ts';
 import { SurfaceGenerator } from '../surface/surfaceGenerator.ts';
@@ -171,14 +172,40 @@ export class ColonyManager {
     };
 
     // 2. Select Landing Site
-    const centerCoord = targetLandingCoord || {
+    let centerCoord = targetLandingCoord || {
       q: Math.floor(surface.width / 4),
       r: Math.floor(surface.height / 2),
     };
+    let centerTile = surface.tiles.find((t) => t.key === HexMath.coordToKey(centerCoord));
+
+    // Ein Landepunkt muss auf festem, passierbarem Boden liegen. Auf
+    // Ozeanwelten (und bei alten Spielständen mit abweichendem Wunschfeld)
+    // wird sonst deterministisch das nächstgelegene Land gewählt. Die
+    // Landezone des Generators schützt genau diesen Bereich.
+    const isLandingTile = (tile: PlanetSurface['tiles'][number] | undefined): boolean => {
+      if (!tile) return false;
+      if (tile.biome === 'ocean' || tile.biome === 'gas') return false;
+      return !BIOME_CATALOG[tile.biome]?.isImpassable;
+    };
+
+    if (!isLandingTile(centerTile)) {
+      const distance = (coord: HexCoord) =>
+        Math.abs(coord.q - centerCoord.q) + Math.abs(coord.r - centerCoord.r);
+      const fallback = surface.tiles
+        .filter((tile) => isLandingTile(tile))
+        .sort((a, b) => {
+          const delta = distance(a.coord) - distance(b.coord);
+          return delta !== 0 ? delta : a.key.localeCompare(b.key);
+        })[0];
+      if (fallback) {
+        centerCoord = fallback.coord;
+        centerTile = fallback;
+      }
+    }
+
     const centerKey = HexMath.coordToKey(centerCoord);
 
     // Verify center hex is not already claimed
-    const centerTile = surface.tiles.find((t) => t.key === centerKey);
     if (centerTile && centerTile.claimedByColonyId) {
       return {
         success: false,
@@ -203,12 +230,17 @@ export class ColonyManager {
     }
 
     // 5. City Center Building Instance
+    // Gasriesen haben keine feste Oberfläche. Statt eines Koloniezentrums
+    // erhält die Kolonie dort eine Gasförderplattform, das einzige zugelassene
+    // Führungsgebäude (siehe buildingCatalog.ts).
+    const isGasGiant = planet.planetType === 'gas_giant';
+    const centerBuildingDefId = isGasGiant ? 'gas_extraction_hub' : 'city_center';
     const cityCenterBuildingId = `bld-citycenter-${colonyId}`;
     const cityCenterInstance: BuildingInstance = {
       id: cityCenterBuildingId,
       colonyId,
       hexCoord: centerCoord,
-      buildingDefId: 'city_center',
+      buildingDefId: centerBuildingDefId,
       level: 1,
       isActive: true,
     };

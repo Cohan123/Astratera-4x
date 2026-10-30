@@ -15,6 +15,10 @@ const modules = import.meta.glob(
     '../../Tilesets/Planetenbiome/**/TILE_*.png',
     '../../Tilesets/Planetenbiome/Lava/lava_tile_*.png',
     '../../Tilesets/Planetenbiome/Lava/mountain_hex_*.png',
+    '../../Tilesets/Planetenbiome/Gasriesen/*/*.png',
+    '../../Tilesets/Planetenbiome/Giftwelten/*.png',
+    '../../Tilesets/Planetenbiome/Xenoplaneten/*.png',
+    '../../Tilesets/Planetenbiome/Gestein/*.png',
   ],
   {
     eager: true,

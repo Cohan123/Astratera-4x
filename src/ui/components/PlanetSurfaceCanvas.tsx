@@ -304,6 +304,7 @@ export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
           variant: tileContext.variants.get(tile.key) ?? 0,
           isCoastal: tileContext.coastal.has(tile.key),
           nearWater: tileContext.nearWater.has(tile.key),
+          planetColor: planet.color,
         });
         drawSurfaceTile(ctx, art, tile, center.x, center.y, HEX_RADIUS, planet);
 
@@ -513,7 +514,11 @@ export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
     // Der Bleed-Faktor vergrößert die Zeichenfläche so, dass die sichtbare
     // Hex-Fläche wieder exakt auf dem Raster landet.
     const bleed = art.bleed && Number.isFinite(art.bleed) ? Math.max(1, art.bleed) : 1;
-    const drawWidth = width * bleed;
+    // Quadratische Punkt-Hex-Kacheln (Gas, Gift, Xeno, Gestein) werden als
+    // Quadrat gezeichnet; die sichtbare Hex-Höhe entspricht dann der
+    // Kachelhöhe. Das vermeidet eine Verzerrung der 1:1-Grafiken.
+    const isSquareBox = art.box === 'square';
+    const drawWidth = isSquareBox ? height * bleed : width * bleed;
     const drawHeight = height * bleed;
     const left = x - drawWidth / 2;
     const top = y - drawHeight / 2;

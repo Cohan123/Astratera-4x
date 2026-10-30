@@ -94,6 +94,15 @@ export class HabitabilityEvaluator {
           description: 'Chemisch aggressive Umweltbedingungen greifen Materialien an.',
         });
         break;
+      case 'xeno':
+        score -= 25;
+        factors.push({
+          title: 'Fremdartige Biosphäre',
+          impactPercent: -25,
+          isPositive: false,
+          description: 'Unbekannte Organismen und instabile Kristallökosysteme erschweren planbare Landwirtschaft.',
+        });
+        break;
     }
 
     // 3. Atmosphere Factors

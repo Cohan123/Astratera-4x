@@ -17,7 +17,7 @@ In Phase 1 wurden alle vier Kernmodule vollständig umgesetzt:
 | **Zwei-Ebenen-Navigation** | Modul 2 | Vollständig | Nahtloser Wechsel zwischen Galaxy- und Systemkarte mit stabiler Zustandserhaltung. |
 | **2D Systemkarte** | Modul 2 | Vollständig | Zentralstern (oder Doppelsternsystem), animierte Keplerianische Planetenorbits. |
 | **Prozedurale Planetengenerierung** | Modul 2 | Vollständig | Isolierter Zufallsstrom pro System (`seed:systemId:planets`), reproduzierbar. |
-| **7 Planetentypen** | Modul 2 | Vollständig | Ozean, Gestein, Wüste, Eis, Vulkan, Gasriese (mit Ringen), Giftig. |
+| **8 Planetentypen** | Modul 2 | Vollständig | Ozean, Gestein, Wüste, Eis, Vulkan, Gasriese (mit Ringen), Giftig, Xenowelt (selten). |
 | **Physikalische Planetendaten** | Modul 2 | Vollständig | Orbitdistanz (AU), Umlaufzeit (Tage), Temperatur (K/°C), Atmosphäre, Schwerkraft. |
 | **Planetare Sichtbarkeitsfilter** | Modul 3 | Vollständig | `PlanetDataFilter` schützt Tiefentelemetrie bis zur Durchführung von Sonden-Scans. |
 | **Systematische Planetenaufklärung** | Modul 3 | Vollständig | Dreistufiger Erkundungspfad: `unexplored` → `surveyed` → `analyzed`. |

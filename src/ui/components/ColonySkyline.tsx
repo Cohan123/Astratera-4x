@@ -293,6 +293,21 @@ const BarracksSprite: React.FC<SpriteProps> = ({ level, accent }) => (
   </g>
 );
 
+const GasHubSprite: React.FC<SpriteProps> = ({ level, accent }) => (
+  <g>
+    <ellipse cx={0} cy={10} rx={52} ry={9} fill={WALLS.shadow} opacity={0.3} />
+    <path d="M -46 -18 H 46 L 30 8 H -30 Z" fill={WALLS.mid} stroke={WALLS.deep} strokeWidth={1.2} />
+    <rect x={-26} y={-34} width={52} height={16} fill={WALLS.light} stroke={WALLS.deep} strokeWidth={1} />
+    <circle cx={-14} cy={-26} r={4} fill={accent} opacity={0.9} />
+    <circle cx={0} cy={-26} r={4} fill={accent} opacity={0.7} />
+    <circle cx={14} cy={-26} r={4} fill={accent} opacity={0.5} />
+    <path d="M -20 -34 V -54 A 20 12 0 0 1 20 -54 V -34" fill="none" stroke={WALLS.light} strokeWidth={3} />
+    <line x1={-30} y1={8} x2={-14} y2={30} stroke={WALLS.dark} strokeWidth={2} />
+    <line x1={30} y1={8} x2={14} y2={30} stroke={WALLS.dark} strokeWidth={2} />
+    <path d="M -52 4 H 52" stroke={accent} strokeWidth={1} opacity={0.4} />
+  </g>
+);
+
 const GenericSprite: React.FC<SpriteProps> = ({ level, accent }) => (
   <g>
     <ellipse cx={0} cy={2} rx={32} ry={6} fill={WALLS.shadow} opacity={0.4} />
@@ -308,6 +323,7 @@ const GenericSprite: React.FC<SpriteProps> = ({ level, accent }) => (
 
 const SPRITES: Record<SkylineKind, React.FC<SpriteProps>> = {
   city_center: CityCenterSprite,
+  gas_hub: GasHubSprite,
   hydro_dome: HydroDomeSprite,
   solar_field: SolarFieldSprite,
   geothermal: GeothermalSprite,

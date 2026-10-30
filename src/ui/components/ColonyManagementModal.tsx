@@ -11,6 +11,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { BUILDING_CATALOG } from '../../data/buildingCatalog.ts';
+import { TECHNOLOGY_CATALOG } from '../../data/technologyCatalog.ts';
 import { CORE_RESOURCES } from '../../data/resourceCatalog.ts';
 import { UNIT_CATALOG } from '../../data/unitCatalog.ts';
 import { BuildQueueManager } from '../../core/buildQueueManager.ts';
@@ -71,10 +72,15 @@ interface ColonyManagementModalProps {
   onUpgradeTier?: (colonyId: string) => ColonyTierUpgradeResult;
   /** Planetentyp für die Geländefarben der Stadtansicht. */
   planetType?: PlanetType;
+  /** Erforschte Technologien des Spielers für das zentrale Bau-Tech-Gate. */
+  completedTechIds?: readonly string[];
 }
 
 /** Steuersatz-Voreinstellungen für schnelle, vergleichbare Entscheidungen. */
 const TAX_PRESETS = [0, 15, 30, 45, 60];
+
+/** Gebäude, die ausschließlich als Führungsgebäude bei der Gründung entstehen. */
+const CENTER_BUILDING_IDS = new Set(['city_center', 'gas_extraction_hub']);
 
 const RESOURCE_LABELS: Record<keyof ResourceYields, string> = {
   food: 'Nahrung',
@@ -120,6 +126,7 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
   onSetTaxRate,
   onUpgradeTier,
   planetType,
+  completedTechIds = [],
 }) => {
   // Hooks müssen vor jedem bedingten Ausstieg aufgerufen werden
   const [activeTab, setActiveTab] = useState<ColonyModalTab>(initialTab);
@@ -140,15 +147,22 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
     const targets = new Map<string, HexCoord | null>();
     if (!colony || !surface) return targets;
 
+    const context = { planetType, completedTechIds };
     for (const bDef of Object.values(BUILDING_CATALOG)) {
-      if (bDef.id === 'city_center') continue;
+      if (CENTER_BUILDING_IDS.has(bDef.id)) continue;
       targets.set(
         bDef.id,
-        BuildQueueManager.findAvailableBuildCoord(colony, surface, bDef.id, targetHexForBuild ?? null)
+        BuildQueueManager.findAvailableBuildCoord(
+          colony,
+          surface,
+          bDef.id,
+          targetHexForBuild ?? null,
+          context
+        )
       );
     }
     return targets;
-  }, [colony, surface, targetHexForBuild]);
+  }, [colony, surface, targetHexForBuild, planetType, completedTechIds]);
 
   if (!isOpen || !colony) return null;
 
@@ -165,9 +179,22 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
     !!targetHexForBuild &&
     Object.values(BUILDING_CATALOG).some(
       (bDef) =>
-        bDef.id !== 'city_center' &&
-        BuildQueueManager.validateBuildingPlacement(colony, surface, bDef.id, targetHexForBuild).success
+        !CENTER_BUILDING_IDS.has(bDef.id) &&
+        BuildQueueManager.validateBuildingPlacement(colony, surface, bDef.id, targetHexForBuild, {
+          planetType,
+          completedTechIds,
+        }).success
     );
+
+  // Baukarten nach Planetentyp filtern. Auf Gasriesen bleibt so nur der
+  // Gaskollektor übrig; Tech-Sperren werden zusätzlich sichtbar markiert.
+  const buildableDefs = Object.values(BUILDING_CATALOG).filter((bDef) => {
+    if (CENTER_BUILDING_IDS.has(bDef.id)) return false;
+    if (!planetType) return true;
+    if (bDef.disallowedPlanetTypes?.includes(planetType)) return false;
+    if (bDef.allowedPlanetTypes && !bDef.allowedPlanetTypes.includes(planetType)) return false;
+    return true;
+  });
 
   const approvalTone =
     tax.approval >= 60 ? 'text-emerald-400' : tax.approval >= 40 ? 'text-amber-400' : 'text-rose-400';
@@ -186,7 +213,12 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
       : null;
   const nextTierRequirement =
     nextTier && nextTier !== 'outpost' ? COLONY_TIER_REQUIREMENTS[nextTier] : null;
-  const cityCenter = colony.buildings.find((b) => b.buildingDefId === 'city_center') ?? null;
+  const cityCenter =
+    colony.buildings.find(
+      (b) =>
+        b.hexCoord.q === colony.cityCenterCoord.q &&
+        b.hexCoord.r === colony.cityCenterCoord.r
+    ) ?? null;
 
   const missingTierRequirements: string[] = [];
   if (nextTierRequirement) {
@@ -1016,21 +1048,24 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {Object.values(BUILDING_CATALOG)
-                    .filter((b) => b.id !== 'city_center')
+                  {buildableDefs
                     .map((bDef) => {
+                      const techLocked =
+                        !!bDef.requiredTechId && !completedTechIds.includes(bDef.requiredTechId);
                       const canAffordMinerals = colony.stockpile.minerals >= bDef.baseMineralCost;
                       const canAffordRare = colony.stockpile.rareResources >= bDef.baseRareCost;
                       const creditCost = bDef.creditCost ?? 0;
                       const canAffordCredits = treasury === undefined || treasury >= creditCost;
                       const canAfford = canAffordMinerals && canAffordRare && canAffordCredits;
                       const buildTarget = buildTargets.get(bDef.id) ?? null;
-                      const canBuild = canAfford && buildTarget !== null;
-                      const availability = !buildTarget
-                        ? { label: 'Bauplatz gesperrt', cls: 'border-rose-800/60 bg-rose-950/40 text-rose-300' }
-                        : !canAfford
-                          ? { label: 'Ressourcen fehlen', cls: 'border-amber-800/60 bg-amber-950/40 text-amber-300' }
-                          : { label: 'Verfügbar', cls: 'border-emerald-800/60 bg-emerald-950/40 text-emerald-300' };
+                      const canBuild = canAfford && buildTarget !== null && !techLocked;
+                      const availability = techLocked
+                        ? { label: 'Technologie fehlt', cls: 'border-violet-800/60 bg-violet-950/40 text-violet-300' }
+                        : !buildTarget
+                          ? { label: 'Bauplatz gesperrt', cls: 'border-rose-800/60 bg-rose-950/40 text-rose-300' }
+                          : !canAfford
+                            ? { label: 'Ressourcen fehlen', cls: 'border-amber-800/60 bg-amber-950/40 text-amber-300' }
+                            : { label: 'Verfügbar', cls: 'border-emerald-800/60 bg-emerald-950/40 text-emerald-300' };
 
                       return (
                         <div
@@ -1050,6 +1085,12 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
                               {bDef.category} · max. Stufe {bDef.maxLevel}
                             </div>
                             <p className="text-[11px] text-slate-400 mt-1 leading-snug">{bDef.description}</p>
+                            {techLocked && bDef.requiredTechId && (
+                              <div className="mt-1 text-[10px] font-mono text-violet-300">
+                                Benötigt Technologie:{' '}
+                                {TECHNOLOGY_CATALOG[bDef.requiredTechId]?.name ?? bDef.requiredTechId}
+                              </div>
+                            )}
                             <div className="mt-2 text-[10px] font-mono text-slate-400 space-x-2">
                               <span>Bau: {bDef.baseProductionCost} ⚙️</span>
                               <span className={canAffordMinerals ? 'text-slate-300' : 'text-rose-400 font-bold'}>

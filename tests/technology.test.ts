@@ -131,6 +131,7 @@ describe('technology graph helpers', () => {
     ]);
     expect(getAllDependents('automated_assembly').map((t) => t.id)).toEqual([
       'advanced_metallurgy',
+      'gas_extraction',
       'gravitic_engineering',
       'heavy_armor_brigades',
       'interstellar_freight_network',

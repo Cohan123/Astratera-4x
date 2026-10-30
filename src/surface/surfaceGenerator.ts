@@ -23,6 +23,7 @@ import { HexBiome, HexCoord, Planet, PlanetHexTile, PlanetSurface, ResourceDepos
 import { Mulberry32 } from '../generation/prng.ts';
 import { HexMath } from './hexMath.ts';
 import { Hydrology } from './hydrology.ts';
+import { resolveSurfaceSize } from './surfaceSize.ts';
 import { ValueNoise2D } from './terrainNoise.ts';
 
 /**
@@ -44,7 +45,7 @@ interface PlanetProfile {
   /** Grundwildheit 0..1 (DF-nahe Savagery). */
   savageryBase: number;
   /** Klimafärbung für die Biomableitung. */
-  flavor: 'terran' | 'arid' | 'frozen' | 'volcanic' | 'toxic' | 'gas';
+  flavor: 'terran' | 'arid' | 'frozen' | 'volcanic' | 'toxic' | 'xeno' | 'gas';
   /** Hostile Planeten erhalten keine gemäßigten Biome, sondern Vulkan/Gift. */
   hostile: boolean;
 }
@@ -64,19 +65,29 @@ interface RawTile {
 }
 
 export class SurfaceGenerator {
-  public static readonly GENERATOR_VERSION = 4;
+  public static readonly GENERATOR_VERSION = 5;
   public static readonly DEFAULT_WIDTH = 18;
   public static readonly DEFAULT_HEIGHT = 10;
+  /** Harte Obergrenze der Landfläche auf Ozeanwelten (15 %). */
+  public static readonly OCEAN_MAX_LAND_FRACTION = 0.15;
 
   /**
-   * Generates a persistent surface hex grid for a given planet
+   * Generates a persistent surface hex grid for a given planet.
+   *
+   * Ohne explizite Maße wird die Größe deterministisch aus Planetentyp und Seed
+   * aufgelöst (siehe `surfaceSize.ts`). Explizite Maße bleiben für Testlabor
+   * und Migration erhalten und werden auf die Sicherheitsgrenzen geklemmt.
    */
   public static generateSurface(
     planet: Planet,
     galaxySeed: string,
-    width: number = SurfaceGenerator.DEFAULT_WIDTH,
-    height: number = SurfaceGenerator.DEFAULT_HEIGHT
+    width?: number,
+    height?: number
   ): PlanetSurface {
+    const resolvedSize = resolveSurfaceSize(planet, galaxySeed, width, height);
+    width = resolvedSize.width;
+    height = resolvedSize.height;
+
     const surfaceSeedStr = `${galaxySeed}:${planet.id}:surface:v${SurfaceGenerator.GENERATOR_VERSION}`;
     const rng = new Mulberry32(surfaceSeedStr);
 
@@ -159,7 +170,12 @@ export class SurfaceGenerator {
     }
 
     // --- Phase 2: Quantil-Bänder ---------------------------------------------
-    const bands = SurfaceGenerator.assignBands(raw, profile);
+    // Ozeanwelten erhalten eine harte Obergrenze für Landkacheln. Sie wird aus
+    // der tatsächlichen Kachelzahl berechnet (Abrunden), damit 15 % niemals
+    // überschritten werden – unabhängig von der gewählten Oberflächengröße.
+    const oceanLandCap =
+      planet.planetType === 'ocean' ? Math.floor(raw.length * SurfaceGenerator.OCEAN_MAX_LAND_FRACTION) : undefined;
+    const bands = SurfaceGenerator.assignBands(raw, profile, oceanLandCap);
 
     // --- Phase 3: Klima an Höhe, Küste und Wind koppeln ----------------------
     const indexByKey = new Map<string, number>();
@@ -168,7 +184,13 @@ export class SurfaceGenerator {
     SurfaceGenerator.applyClimateModifiers(raw, bands, indexByKey);
 
     // --- Phase 3b: Landeflächen reparieren -----------------------------------
-    const landingZone = SurfaceGenerator.repairLandingZone(raw, bands, width, height);
+    const landingZone = SurfaceGenerator.repairLandingZone(
+      raw,
+      bands,
+      width,
+      height,
+      oceanLandCap
+    );
     const coreIndex = landingZone.coreIndex;
     const protectedIndices = landingZone.protectedIndices;
 
@@ -298,6 +320,14 @@ export class SurfaceGenerator {
         drainage: tile.drainage,
         savagery: tile.savagery,
       });
+    }
+
+    // Letzte Absicherung: Die Landquote wird an den tatsächlich erzeugten
+    // Kacheln gemessen, nicht an einer Schätzung. Da dies vor der Rückgabe und
+    // damit vor Gebäuden, Claims oder Ressourcen geschieht, ist eine Umwandlung
+    // überschüssiger Landkacheln konsistenzfrei.
+    if (oceanLandCap !== undefined) {
+      SurfaceGenerator.enforceOceanLandCap(tiles, oceanLandCap, protectedIndices);
     }
 
     // coreIndex wird nur für die Landezonen-Reparatur benötigt; die Variable
@@ -460,8 +490,8 @@ export class SurfaceGenerator {
     switch (type) {
       case 'ocean':
         return {
-          seaFraction: 0.55,
-          landBandWeights: [0.65, 0.3, 0.05],
+          seaFraction: 0.9,
+          landBandWeights: [0.7, 0.25, 0.05],
           temperatureBase: 0.55,
           moistureBase: 0.55,
           volcanismBase: 0.1,
@@ -513,6 +543,17 @@ export class SurfaceGenerator {
           flavor: 'toxic',
           hostile: true,
         };
+      case 'xeno':
+        return {
+          seaFraction: 0.24,
+          landBandWeights: [0.5, 0.32, 0.18],
+          temperatureBase: 0.6,
+          moistureBase: 0.6,
+          volcanismBase: 0.35,
+          savageryBase: 0.9,
+          flavor: 'xeno',
+          hostile: true,
+        };
       case 'gas_giant':
         return {
           seaFraction: 0,
@@ -547,7 +588,11 @@ export class SurfaceGenerator {
    * Meeresanteil exakt dem Profil entspricht und ein Landplanet nicht zufällig
    * vollständig überschwemmt wird.
    */
-  private static assignBands(raw: RawTile[], profile: PlanetProfile): Uint8Array {
+  private static assignBands(
+    raw: RawTile[],
+    profile: PlanetProfile,
+    maxLandCount?: number
+  ): Uint8Array {
     const n = raw.length;
     const bands = new Uint8Array(n);
     if (n === 0) return bands;
@@ -565,10 +610,24 @@ export class SurfaceGenerator {
     if (seaCount > n) seaCount = n;
 
     let landCount = n - seaCount;
+
+    // Ozeanwelten: Landmenge hart auf die berechnete Obergrenze begrenzen.
+    if (maxLandCount !== undefined && landCount > maxLandCount) {
+      landCount = Math.max(0, maxLandCount);
+      seaCount = n - landCount;
+    }
+
     if (landCount < 1) {
-      // Schutz: Mindestens eine Landkachel bleibt für die Landezone erhalten.
-      seaCount = n - 1;
-      landCount = 1;
+      if (maxLandCount !== undefined && maxLandCount < 1) {
+        // Extrem kleine Karte: 15 % ergeben 0 ganze Landkacheln. Dann bleibt
+        // die Welt vollständig Wasser; es wird keine Regelverletzung erzeugt.
+        seaCount = n;
+        landCount = 0;
+      } else {
+        // Schutz: Mindestens eine Landkachel bleibt für die Landezone erhalten.
+        seaCount = n - 1;
+        landCount = 1;
+      }
     }
 
     let highCount = landCount >= 3 ? Math.max(1, Math.round(landCount * profile.landBandWeights[2])) : 0;
@@ -610,7 +669,8 @@ export class SurfaceGenerator {
     raw: RawTile[],
     bands: Uint8Array,
     width: number,
-    height: number
+    height: number,
+    oceanLandCap?: number
   ): { coreIndex: number; protectedIndices: Set<number> } {
     if (raw.length === 0) return { coreIndex: -1, protectedIndices: new Set<number>() };
 
@@ -622,14 +682,66 @@ export class SurfaceGenerator {
     if (coreIndex === undefined) return { coreIndex: -1, protectedIndices: new Set<number>() };
 
     const protectedIndices = new Set<number>([coreIndex]);
-    for (const neighbor of HexMath.getNeighbors(coreCoord)) {
-      const idx = indexByKey.get(HexMath.coordToKey(neighbor));
-      if (idx !== undefined) protectedIndices.add(idx);
+
+    // Auf Ozeanwelten darf die Landezone keine zusätzlichen Landkacheln
+    // erzeugen. Statt neues Land zu schaffen, wird vorhandenes Land aus
+    // abgelegenen Kacheln in den Landebereich *verschoben*: Der Spender wird
+    // Ozean, die Zielkachel Land. Die Gesamtzahl der Landkacheln bleibt damit
+    // exakt gleich und die 15-%-Grenze wird nie verletzt. So entsteht dennoch
+    // eine bebaubare Insel um das Koloniezentrum.
+    if (oceanLandCap !== undefined) {
+      if (oceanLandCap < 1) {
+        return { coreIndex: -1, protectedIndices: new Set<number>() };
+      }
+
+      const ringIndices = HexMath.getNeighbors(coreCoord)
+        .map((neighbor) => indexByKey.get(HexMath.coordToKey(neighbor)))
+        .filter((idx): idx is number => idx !== undefined)
+        .sort((a, b) => (raw[a].key < raw[b].key ? -1 : raw[a].key > raw[b].key ? 1 : 0));
+
+      // Kern zuerst, dann bis zu drei Nachbarn: das entspricht der
+      // Anfangsbeanspruchung einer Kolonie und schafft echte Bauplätze.
+      const targets = [coreIndex, ...ringIndices.slice(0, 3)];
+      const targetSet = new Set<number>(targets);
+
+      const donors = raw
+        .filter((candidate) => bands[candidate.index] > 0 && !targetSet.has(candidate.index))
+        .sort((a, b) => {
+          const bandDelta = bands[a.index] - bands[b.index];
+          if (bandDelta !== 0) return bandDelta;
+          return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+        });
+      let donorIndex = 0;
+
+      for (const target of targets) {
+        if (bands[target] > 0) {
+          // Bereits Land: nur schützen, nichts tauschen.
+          protectedIndices.add(target);
+          continue;
+        }
+        const donor = donors[donorIndex];
+        if (!donor) break;
+        donorIndex += 1;
+        bands[donor.index] = 0;
+        bands[target] = 1;
+        protectedIndices.add(target);
+      }
+
+      if (bands[coreIndex] === 0) {
+        // Keine Landkachel vorhanden: keine erzwungene Landezone.
+        return { coreIndex: -1, protectedIndices: new Set<number>() };
+      }
+    } else {
+      for (const neighbor of HexMath.getNeighbors(coreCoord)) {
+        const idx = indexByKey.get(HexMath.coordToKey(neighbor));
+        if (idx !== undefined) protectedIndices.add(idx);
+      }
     }
 
     const ensurePassable = (idx: number): void => {
       const band = bands[idx];
       if (band === 1 || band === 2) return;
+      if (oceanLandCap !== undefined && band === 0) return; // Ozean bleibt Ozean.
 
       // Bevorzugt Tausch mit Tiefland, damit die Landezone flach bleibt.
       for (const candidate of raw) {
@@ -649,7 +761,8 @@ export class SurfaceGenerator {
         return;
       }
 
-      // Letzter Ausweg (sehr kleine Karten): Band direkt setzen.
+      // Letzter Ausweg (sehr kleine Karten): Band direkt setzen. Auf
+      // Ozeanwelten ist die Kachel bereits Land, daher bleibt die Anzahl gleich.
       bands[idx] = 1;
     };
 
@@ -661,6 +774,46 @@ export class SurfaceGenerator {
     for (const idx of neighborIndices) ensurePassable(idx);
 
     return { coreIndex, protectedIndices };
+  }
+
+  /**
+   * Entfernt auf Ozeanwelten jede Landkachel, die die harte 15-%-Grenze
+   * überschreiten würde. Die Umwandlung geschieht ausschließlich während der
+   * Generierung und räumt alle wasserbezogenen Felder mit auf, damit keine
+   * halben Land-/Wasserdaten zurückbleiben.
+   */
+  private static enforceOceanLandCap(
+    tiles: PlanetHexTile[],
+    maxLandCount: number,
+    protectedIndices: Set<number>
+  ): void {
+    let landCount = tiles.filter((tile) => tile.biome !== 'ocean').length;
+    if (landCount <= maxLandCount) return;
+
+    const candidates = tiles
+      .filter((tile) => tile.biome !== 'ocean')
+      .filter((tile) => {
+        const index = tiles.indexOf(tile);
+        return !protectedIndices.has(index);
+      })
+      .sort((a, b) => {
+        if (a.elevation !== b.elevation) return a.elevation - b.elevation;
+        return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+      });
+
+    for (const tile of candidates) {
+      if (landCount <= maxLandCount) break;
+      tile.biome = 'ocean';
+      tile.elevation = 0;
+      tile.deposit = 'none';
+      tile.isDepositDiscovered = false;
+      tile.hasHazard = false;
+      tile.hazardDescription = undefined;
+      tile.riverDischarge = 0;
+      tile.flowsTo = null;
+      tile.isLake = false;
+      landCount -= 1;
+    }
   }
 
   /**
@@ -725,6 +878,23 @@ export class SurfaceGenerator {
       if (volcanism > 0.7) return 'lava';
       if (band === 2) return volcanism > 0.55 ? 'volcanic' : 'hills';
       return rainfall > 0.5 ? 'alien' : 'toxic';
+    }
+
+    // Xenowelten: eigenständige, aber aus vorhandenen Biomen zusammengesetzte
+    // Umwelt. Keine neuen Biomtypen und keine Sonderregeln außerhalb des
+    // bestehenden Biomkatalogs.
+    if (profile.flavor === 'xeno') {
+      if (band === 3) return 'mountains';
+      if (band === 2) return savagery > 0.78 ? 'alien' : 'hills';
+      if (impact > 0.9) return 'impact_crater';
+      if (water.isLake || (water.isRiver && drainage > 0.45)) return 'marsh';
+      if (temperature < 0.2) return 'tundra';
+      if (rainfall > 0.62 && savagery > 0.55) return 'fungal_forest';
+      if (rainfall > 0.56) return 'jungle';
+      if (rainfall > 0.4) return 'forest';
+      if (rainfall < 0.24) return 'desert';
+      if (savagery > 0.72) return 'alien';
+      return 'plains';
     }
 
     if (band === 3) return 'mountains';

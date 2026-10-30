@@ -163,15 +163,15 @@ describe('Astraea 4X - Modul 4 Test Suite (Kolonieverwaltung & Ausbau)', () => {
     const cm = new ColonyManager(bus);
     const system = createMockSystem();
 
-    // Gas giant cannot be colonized
+    // Gasriese: zulässig als Gasförderung, aber ohne normales Koloniezentrum
     const gasGiant = createMockPlanet('gas-giant-01');
     gasGiant.planetType = 'gas_giant';
     gasGiant.habitability = 0;
     const surfaceGG = SurfaceGenerator.generateSurface(gasGiant, 'SEED');
 
-    const failRes = cm.foundColony(gasGiant, system, surfaceGG, 1, '2380.01');
-    expect(failRes.success).toBe(false);
-    expect(failRes.reason).toContain('Gasriesen');
+    const gasRes = cm.foundColony(gasGiant, system, surfaceGG, 1, '2380.01');
+    expect(gasRes.success).toBe(true);
+    expect(gasRes.colony?.buildings[0].buildingDefId).toBe('gas_extraction_hub');
 
     // Unanalyzed planet cannot be colonized
     const unanalyzed = createMockPlanet('unanal-01');

@@ -9,6 +9,7 @@
 import React, { useMemo, useState } from 'react';
 import type { HexCoord, PlanetType } from '../../core/types.ts';
 import { HexMath } from '../../surface/hexMath.ts';
+import { SURFACE_SIZE_PROFILES } from '../../surface/surfaceSize.ts';
 import { PlanetSurfaceCanvas } from '../../ui/components/PlanetSurfaceCanvas.tsx';
 import { HexTileInspector } from '../../ui/components/HexTileInspector.tsx';
 import type { TestBalloonProps } from '../testLabRegistry.tsx';
@@ -185,7 +186,13 @@ export const SurfaceGeneratorBalloon: React.FC<TestBalloonProps> = ({ onBackToMe
           </div>
           <p className="text-[10px] font-mono text-slate-600 -mt-1">
             Erlaubt: {SURFACE_TEST_LIMITS.minWidth}–{SURFACE_TEST_LIMITS.maxWidth} ×{' '}
-            {SURFACE_TEST_LIMITS.minHeight}–{SURFACE_TEST_LIMITS.maxHeight} Kacheln.
+            {SURFACE_TEST_LIMITS.minHeight}–{SURFACE_TEST_LIMITS.maxHeight} Kacheln, maximal{' '}
+            {SURFACE_TEST_LIMITS.maxTiles}. Typisch für {PLANET_TYPE_TEST_LABELS[config.planetType]}:
+            {' '}
+            {SURFACE_SIZE_PROFILES[config.planetType].minWidth}–
+            {SURFACE_SIZE_PROFILES[config.planetType].maxWidth} ×{' '}
+            {SURFACE_SIZE_PROFILES[config.planetType].minHeight}–
+            {SURFACE_SIZE_PROFILES[config.planetType].maxHeight}.
           </p>
 
           <ConfigLabel label="Seed" hint="Gleicher Seed + gleiche Parameter = identische Oberfläche.">
@@ -328,6 +335,29 @@ export const SurfaceGeneratorBalloon: React.FC<TestBalloonProps> = ({ onBackToMe
                   <dd className="text-slate-200">
                     {result.statistics.tileCount} / {result.statistics.expectedTileCount}
                   </dd>
+                  <dt className="text-slate-500">Land / Wasser</dt>
+                  <dd
+                    className={
+                      config.planetType === 'ocean' && result.statistics.landShare > 15
+                        ? 'text-rose-300'
+                        : 'text-slate-200'
+                    }
+                  >
+                    {result.statistics.landCount} / {result.statistics.waterCount} (
+                    {result.statistics.landShare} % Land)
+                  </dd>
+                  {config.planetType === 'ocean' && (
+                    <>
+                      <dt className="text-slate-500">Landobergrenze</dt>
+                      <dd
+                        className={
+                          result.statistics.landShare > 15 ? 'text-rose-300' : 'text-emerald-300'
+                        }
+                      >
+                        max. 15 % ({Math.floor(result.statistics.tileCount * 0.15)} Kacheln)
+                      </dd>
+                    </>
+                  )}
                   <dt className="text-slate-500">Biomtypen</dt>
                   <dd className="text-slate-200">{result.statistics.biomeCount}</dd>
                   <dt className="text-slate-500">Vorkommen</dt>

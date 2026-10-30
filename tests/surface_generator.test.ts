@@ -54,9 +54,9 @@ describe('SurfaceGenerator (Mehrfeldmodell)', () => {
     const first = SurfaceGenerator.generateSurface(planet, 'SURFACE-SEED-01');
     const second = SurfaceGenerator.generateSurface(planet, 'SURFACE-SEED-01');
 
-    expect(first.tiles).toHaveLength(180);
+    expect(first.tiles).toHaveLength(first.width * first.height);
     expect(first.tiles).toEqual(second.tiles);
-    expect(new Set(first.tiles.map((tile) => tile.key)).size).toBe(180);
+    expect(new Set(first.tiles.map((tile) => tile.key)).size).toBe(first.tiles.length);
   });
 
   it('2. anderer Seed erzeugt eine andere Karte', () => {
@@ -70,17 +70,18 @@ describe('SurfaceGenerator (Mehrfeldmodell)', () => {
     expect(shape(first)).not.toBe(shape(second));
   });
 
-  it('3. Ozeanplanet enthält Wasser und Land', () => {
+  it('3. Ozeanplanet enthält Wasser und höchstens 15 % Land', () => {
     const surface = SurfaceGenerator.generateSurface(createPlanet({ planetType: 'ocean' }), 'SURFACE-OCEAN');
     const oceanCount = surface.tiles.filter((tile) => tile.biome === 'ocean').length;
+    const landCount = surface.tiles.length - oceanCount;
 
     expect(oceanCount).toBeGreaterThan(0);
-    expect(oceanCount).toBeLessThan(surface.tiles.length);
+    expect(landCount).toBeGreaterThan(0);
+    expect(landCount).toBeLessThanOrEqual(Math.floor(surface.tiles.length * 0.15));
+    expect(oceanCount).toBeGreaterThanOrEqual(Math.ceil(surface.tiles.length * 0.85));
   });
 
   it('4. Landezone ist passierbar, arable und gefahrlos', () => {
-    const core = { q: 4, r: 5 };
-    const zone = [core, ...HexMath.getNeighbors(core)];
     const allowedBiomes = new Set([
       'plains',
       'forest',
@@ -99,6 +100,8 @@ describe('SurfaceGenerator (Mehrfeldmodell)', () => {
         }),
         `SURFACE-ZONE-${planetType}`
       );
+      const core = { q: Math.floor(surface.width / 4), r: Math.floor(surface.height / 2) };
+      const zone = [core, ...HexMath.getNeighbors(core)];
 
       for (const coord of zone) {
         const tile = tileAt(surface, coord.q, coord.r);
@@ -135,9 +138,14 @@ describe('SurfaceGenerator (Mehrfeldmodell)', () => {
     const oceanCount = surface.tiles.filter((tile) => tile.biome === 'ocean').length;
     const mountainCount = surface.tiles.filter((tile) => tile.biome === 'mountains').length;
 
-    // rocky: seaFraction 0.2 -> 36 von 180 Kacheln; Hochland 12 % der 144 Landkacheln.
-    expect(oceanCount).toBe(36);
-    expect(mountainCount).toBe(17);
+    const tileCount = surface.tiles.length;
+    const expectedOcean = Math.round(tileCount * 0.2);
+    const landCount = tileCount - expectedOcean;
+    const expectedMountains = landCount >= 3 ? Math.max(1, Math.round(landCount * 0.12)) : 0;
+
+    // rocky: seaFraction 0.2; Hochland 12 % der Landkacheln.
+    expect(oceanCount).toBe(expectedOcean);
+    expect(mountainCount).toBe(expectedMountains);
   });
 
   it('7. Ozeankacheln tragen keine Ressourcenvorkommen', () => {
@@ -154,10 +162,11 @@ describe('SurfaceGenerator (Mehrfeldmodell)', () => {
     const surface = SurfaceGenerator.generateSurface(planet, 'SURFACE-VERSION');
 
     expect(surface.planetId).toBe(planet.id);
-    expect(surface.width).toBe(18);
-    expect(surface.height).toBe(10);
-    expect(surface.generatorVersion).toBe(4);
-    expect(surface.seed).toBe(`${'SURFACE-VERSION'}:${planet.id}:surface:v4`);
+    expect(surface.width).toBeGreaterThanOrEqual(6);
+    expect(surface.height).toBeGreaterThanOrEqual(6);
+    expect(surface.tiles).toHaveLength(surface.width * surface.height);
+    expect(surface.generatorVersion).toBe(5);
+    expect(surface.seed).toBe(`${'SURFACE-VERSION'}:${planet.id}:surface:v5`);
   });
 
   it('9. Hydrologie erzeugt konsistente Flüsse und Seen', () => {
@@ -178,11 +187,20 @@ describe('SurfaceGenerator (Mehrfeldmodell)', () => {
         continue;
       }
 
+      // Kartenrandkacheln sind hydrologische Auslässe und haben kein Ziel.
+      const neighborKeys = HexMath.getNeighbors(tile.coord)
+        .map((coord) => HexMath.coordToKey(coord))
+        .filter((key) => byKey.has(key));
+      if (neighborKeys.length < 6) {
+        expect(tile.flowsTo, `${tile.key} Randauslass`).toBeNull();
+        continue;
+      }
+
       expect(tile.flowsTo, `${tile.key} ohne Ziel`).toBeTruthy();
       const target = byKey.get(tile.flowsTo as string);
       expect(target, `${tile.key} Ziel ${tile.flowsTo} fehlt`).toBeDefined();
-      const neighbors = HexMath.getNeighbors(tile.coord).map((coord) => HexMath.coordToKey(coord));
-      expect(neighbors, `${tile.key} Ziel nicht benachbart`).toContain(tile.flowsTo);
+      const flowNeighborKeys = HexMath.getNeighbors(tile.coord).map((coord) => HexMath.coordToKey(coord));
+      expect(flowNeighborKeys, `${tile.key} Ziel nicht benachbart`).toContain(tile.flowsTo);
     }
   });
 
@@ -230,7 +248,7 @@ describe('SurfaceGenerator (Mehrfeldmodell)', () => {
       'SURFACE-GAS'
     );
 
-    expect(surface.tiles).toHaveLength(180);
+    expect(surface.tiles).toHaveLength(surface.width * surface.height);
     expect(surface.tiles.every((tile) => tile.biome === 'gas')).toBe(true);
     for (const tile of surface.tiles) {
       expect(tile.elevation).toBe(1);

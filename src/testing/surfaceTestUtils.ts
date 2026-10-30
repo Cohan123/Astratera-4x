@@ -10,12 +10,14 @@ import { Planet, PlanetHexTile, PlanetSurface, PlanetType } from '../core/types.
 import { BIOME_CATALOG } from '../data/terrainCatalog.ts';
 import { DEPOSIT_CATALOG } from '../data/resourceCatalog.ts';
 import { SurfaceGenerator } from '../surface/surfaceGenerator.ts';
+import { SURFACE_SIZE_LIMITS } from '../surface/surfaceSize.ts';
 
 export const SURFACE_TEST_LIMITS = {
-  minWidth: 6,
-  maxWidth: 32,
-  minHeight: 6,
-  maxHeight: 24,
+  minWidth: SURFACE_SIZE_LIMITS.minWidth,
+  maxWidth: SURFACE_SIZE_LIMITS.maxWidth,
+  minHeight: SURFACE_SIZE_LIMITS.minHeight,
+  maxHeight: SURFACE_SIZE_LIMITS.maxHeight,
+  maxTiles: SURFACE_SIZE_LIMITS.maxTiles,
 } as const;
 
 export const SURFACE_TEST_PLANET_TYPES: PlanetType[] = [
@@ -25,6 +27,7 @@ export const SURFACE_TEST_PLANET_TYPES: PlanetType[] = [
   'ice',
   'rocky',
   'toxic',
+  'xeno',
   'gas_giant',
 ];
 
@@ -35,6 +38,7 @@ export const PLANET_TYPE_TEST_LABELS: Record<PlanetType, string> = {
   ice: 'Eiswelt',
   rocky: 'Gesteinswelt',
   toxic: 'Giftwelt',
+  xeno: 'Xenowelt (selten)',
   gas_giant: 'Gasriese (Wolkenschicht)',
 };
 
@@ -79,6 +83,11 @@ export interface SurfaceStatistics {
   impassableCount: number;
   riverCount: number;
   lakeCount: number;
+  /** Alle Kacheln, die nicht als Ozean zählen (Küsten zählen als Land). */
+  landCount: number;
+  waterCount: number;
+  /** Landanteil in Prozent, auf eine Nachkommastelle gerundet. */
+  landShare: number;
   averageElevation: number;
   minElevation: number;
   maxElevation: number;
@@ -144,6 +153,7 @@ export function createTestPlanet(planetType: PlanetType): Planet {
     ice: 170,
     rocky: 270,
     toxic: 410,
+    xeno: 285,
     gas_giant: 180,
   };
   const habitabilityByType: Record<PlanetType, number> = {
@@ -153,7 +163,18 @@ export function createTestPlanet(planetType: PlanetType): Planet {
     ice: 20,
     rocky: 40,
     toxic: 5,
+    xeno: 18,
     gas_giant: 0,
+  };
+  const colorByType: Record<PlanetType, { color: string; accentColor: string }> = {
+    volcanic: { color: '#dc2626', accentColor: '#7f1d1d' },
+    ocean: { color: '#0284c7', accentColor: '#38bdf8' },
+    desert: { color: '#d97706', accentColor: '#fbbf24' },
+    ice: { color: '#bae6fd', accentColor: '#7dd3fc' },
+    rocky: { color: '#94a3b8', accentColor: '#64748b' },
+    toxic: { color: '#a855f7', accentColor: '#e879f9' },
+    xeno: { color: '#7c3aed', accentColor: '#22d3ee' },
+    gas_giant: { color: '#f59e0b', accentColor: '#b45309' },
   };
   const label = PLANET_TYPE_TEST_LABELS[planetType];
 
@@ -175,9 +196,11 @@ export function createTestPlanet(planetType: PlanetType): Planet {
         ? 'liquid_ocean'
         : planetType === 'ice'
           ? 'moderate'
-          : planetType === 'gas_giant'
+          : planetType === 'gas_giant' || planetType === 'volcanic'
             ? 'none'
-            : 'trace',
+            : planetType === 'xeno'
+              ? 'moderate'
+              : 'trace',
     gravityG: 1,
     gravityCategory: 'standard',
     radiationHazard: planetType === 'volcanic' || planetType === 'toxic' ? 'severe' : 'negligible',
@@ -187,8 +210,8 @@ export function createTestPlanet(planetType: PlanetType): Planet {
     surveyStatus: 'analyzed',
     colonizationStatus: 'uncolonized',
     colonyId: null,
-    color: planetType === 'volcanic' ? '#dc2626' : '#38bdf8',
-    accentColor: planetType === 'volcanic' ? '#7f1d1d' : '#0284c7',
+    color: colorByType[planetType].color,
+    accentColor: colorByType[planetType].accentColor,
     texturePattern:
       planetType === 'ocean'
         ? 'oceans'
@@ -196,7 +219,9 @@ export function createTestPlanet(planetType: PlanetType): Planet {
           ? 'bands'
           : planetType === 'volcanic'
             ? 'cracks'
-            : 'craters',
+            : planetType === 'xeno' || planetType === 'toxic'
+              ? 'swirls'
+              : 'craters',
     moonsCount: 0,
   };
 }
@@ -242,6 +267,23 @@ export function generateTestSurface(config: SurfaceTestConfig): SurfaceTestResul
   if (config.planetType === 'gas_giant' && statistics.biomes.every((entry) => entry.id !== 'gas')) {
     warnings.push('Gasriese ohne Wolken-Biom erzeugt.');
   }
+  if (config.planetType === 'ocean' && statistics.landShare > SurfaceGenerator.OCEAN_MAX_LAND_FRACTION * 100) {
+    warnings.push(
+      `Ozeanwelt überschreitet die Landobergrenze: ${statistics.landShare.toFixed(1)} % Land (maximal 15 %).`
+    );
+  }
+  if (
+    config.planetType === 'xeno' &&
+    statistics.biomes.every(
+      (entry) =>
+        entry.id !== 'alien' &&
+        entry.id !== 'fungal_forest' &&
+        entry.id !== 'jungle' &&
+        entry.id !== 'marsh'
+    )
+  ) {
+    warnings.push('Xenowelt ohne fremdartiges Biom erzeugt.');
+  }
 
   return {
     planet,
@@ -278,6 +320,8 @@ export function computeSurfaceStatistics(surface: PlanetSurface): SurfaceStatist
   }
 
   const total = Math.max(1, surface.tiles.length);
+  const waterCount = surface.tiles.filter((tile) => tile.biome === 'ocean').length;
+  const landCount = Math.max(0, surface.tiles.length - waterCount);
   const biomes: BiomeStatistic[] = Array.from(biomeCounts.entries())
     .map(([id, count]) => ({
       id,
@@ -309,6 +353,9 @@ export function computeSurfaceStatistics(surface: PlanetSurface): SurfaceStatist
     impassableCount,
     riverCount,
     lakeCount,
+    landCount,
+    waterCount,
+    landShare: Math.round((landCount / total) * 1000) / 10,
     averageElevation:
       surface.tiles.length > 0
         ? Math.round((elevationSum / surface.tiles.length) * 100) / 100

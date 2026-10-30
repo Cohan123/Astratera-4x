@@ -32,7 +32,7 @@ Astraea 4X ist ein rundenbasiertes Sci-Fi-Strategiespiel, das schrittweise in mo
 - **Frontend / Engine:** React 19 + TypeScript + Vite
 - **Grafik / Rendering:** HTML5 2D Canvas mit HiDPI-Subpixel-Präzision, Frustum Culling & Retina-Support
 - **Styling:** Tailwind CSS (Dark Space Tactical Design, 60-30-10 Farbdisziplin)
-- **Test-Framework:** Vitest (490/490 automatisierte Unit- & Integrations-Tests in 44 Dateien) plus In-App-QA-Runner mit 23 Prüfkriterien
+- **Test-Framework:** Vitest (532/532 automatisierte Unit- & Integrations-Tests in 51 Dateien) plus In-App-QA-Runner mit 23 Prüfkriterien
 - **Persistenz:** Versionierte JSON-Serialisierung (`version: 4`) mit Migration von v1, v2 und v3 (LocalStorage & Datei-Download/Upload)
 
 ---
@@ -68,7 +68,7 @@ Der Launcher erkennt eine bereits laufende Instanz, installiert bei Bedarf die A
 ```bash
 npm test
 ```
-Führt die Vitest-Suite aus (490 Tests in 44 Dateien: Galaxie, Systemkarte/Planeten, Systemansicht, Monde/Asteroidengürtel, Kolonisierung, Modul 4, Koloniestufen, KI-Reiche, KI-Flotten, KI-Diplomatie, Terraforming, Logistik, Distrikte, Technologie-DAG, galaktischer Handel, Privatsektor, Flotten, Flottenbefehle, Diplomatie, Wirtschaft Stufe A, Wirtschaft Stufe B, Oberflächengenerator, Oberflächen-Tiles, Kolonieverwaltung samt Verwaltungs-UI, Kolonie-Stadtansicht, Hydrologie, Territoriumsgrenzen, Steuerregler, Startflotte, Startplatzierung, Fraktionen, Benachrichtigungen, Nachrichtenverlauf, Flottendarstellung, Systemflotten/Kamera, Schiffsleiste/Nachrichten-UI, Spielstand-Vollständigkeit, Reichsverwaltung, Narrative Ebene, Sieg/Niederlage samt Zielanzeige und GUI-Überarbeitung mit Kolonie-Tiles, Kachel-Infos und Stufenaufwertung).
+Führt die Vitest-Suite aus (532 Tests in 51 Dateien: Galaxie, Systemkarte/Planeten, Systemansicht, Monde/Asteroidengürtel, Kolonisierung, Modul 4, Koloniestufen, KI-Reiche, KI-Flotten, KI-Diplomatie, Terraforming, Logistik, Distrikte, Technologie-DAG, galaktischer Handel, Privatsektor, Flotten, Flottenbefehle, Diplomatie, Wirtschaft Stufe A, Wirtschaft Stufe B, Oberflächengenerator, Oberflächen-Tiles, Kolonieverwaltung samt Verwaltungs-UI, Kolonie-Stadtansicht, Hydrologie, Territoriumsgrenzen, Steuerregler, Startflotte, Startplatzierung, Fraktionen, Benachrichtigungen, Nachrichtenverlauf, Flottendarstellung, Systemflotten/Kamera, Schiffsleiste/Nachrichten-UI, Spielstand-Vollständigkeit, Reichsverwaltung, Narrative Ebene, Sieg/Niederlage samt Zielanzeige und GUI-Überarbeitung mit Kolonie-Tiles, Kachel-Infos und Stufenaufwertung, Biom-Tiles, Oberflächengrößen, Ozean-Landgrenze, Gasförderung und Xenowelten).
 
 ### Produktions-Build erstellen
 ```bash
@@ -97,14 +97,15 @@ npm run build
   - Stufenloses Zoomen und Verschieben innerhalb des Sternensystems.
   - **Zwei umschaltbare Darstellungen** („Umlaufbahnen" / „Detailansicht"): Die Detailansicht ordnet alle Planeten auf einer horizontalen, logarithmisch nach mittlerer Entfernung (AU) skalierten Achse an, erzwingt lesbare Mindestabstände, scrollt bei Platzmangel und zentriert die Auswahl; echte Monde erscheinen in beiden Ansichten als maximal vier Begleiterpunkte plus `+N`, Asteroidengürtel als Staub- bzw. Gürtelband zwischen den Planeten.
   - Der Ansichtswechsel ist rein visuell: Rundenstand, Orbitphase, Auswahl und Spielzustand bleiben unverändert; die zuletzt gewählte Ansicht bleibt innerhalb der Sitzung erhalten.
-- **7 differenzierte Planetentypen:**
-  1. *Ozeanplanet* (ausgedehnte Biosphären, hohe Habitabilität)
+- **8 differenzierte Planetentypen:**
+  1. *Ozeanplanet* (ausgedehnte Biosphären, hohe Habitabilität, höchstens 15 % Land)
   2. *Gesteinsplanet* (Terra-Typ mit Gebirgen und Bauslots)
   3. *Wüstenplanet* (aride Kruste mit seltenen Erden)
   4. *Eisplanet* (Kryowelt mit gefrorenen Ozeanen)
   5. *Vulkanplanet* (geothermisch aktiv, reich an Mineralien)
-  6. *Gasriese* (massiv, stürmisch, mit planetarem Ringsystem, unbewohnbar)
+  6. *Gasriese* (massiv, stürmisch, mit planetarem Ringsystem; keine Bodenkolonie, nur Gasförderung)
   7. *Giftiger Planet* (ätzende Atmosphäre, Treibhauseffekt)
+  8. *Xenowelt* (extrem selten, fremdartige Biosphäre; Gewicht zentral in `planetGenerationConfig.ts`)
 - **Physikalische Planetendaten:**
   - Distanz in Astronomischen Einheiten (AU), Umlaufzeit in Tagen.
   - Oberflächentemperatur in Kelvin und Celsius mit Kategorisierung (*Tiefgefroren* bis *Glühend heiß*).
@@ -123,14 +124,15 @@ npm run build
 
 ### 4.3 Modul 3: Habitabilität, Kolonisierung & Aufklärung
 - **Deterministische Habitabilitätsbewertung:** Score 0–100% aus Atmosphäre, Temperatur, Wasser, Schwerkraft, Strahlung und Planetentyp, eingeteilt in fünf Tiers (`ideal`, `moderate`, `harsh`, `hostile`, `uninhabitable`) inklusive transparenter Faktorenmatrix.
-- **Zentrale Kolonisierungsregeln (`ColonizationValidator`):** Planet muss analysiert, unbewohnt, keine feste Oberfläche bei Gasriesen, keine tödliche Strahlung und Habitabilität ≥ 15% aufweisen.
+- **Zentrale Kolonisierungsregeln (`ColonizationValidator`):** Planet muss analysiert, unbewohnt, ohne tödliche Strahlung und mit Habitabilität ≥ 15 % sein. Gasriesen erlauben keine normale Bodenkolonie, sind aber als reine Gasförderung zulässig; die Gebäuderegeln lassen dort ausschließlich Gasförderanlagen zu.
 - **Koloniegründung (`ColonyManager`):** Atomare Zustandstransitionen (`colonizationStatus`, `colonyId`, `discoveryStatus`), automatische Startbevölkerung, Startlager und Ereignisse `colony:founded` / `colony:failed`. Für den Spieler prüft `GameEngine.foundColony()` zusätzlich Vermessung, Bewohnbarkeit und die Fracht eines bereitstehenden Kolonieschiffs; nach erfolgreicher Gründung wird das Schiff verbraucht (ADR-043).
 - **Aufklärungsmodell (`PlanetDataFilter`):** Trennt Realität von Spielerwissen; Tiefenmesswerte bleiben bis zum Sondenscan verborgen.
 - **Persistenz:** Kolonien, Aufklärungsstände und Planetendaten werden vollständig serialisiert.
 
 ### 4.4 Modul 4: Planetenoberfläche & Kolonieverwaltung
-- **Prozedurale Hex-Oberfläche (ADR-049):** 18 × 10 Tiles pro Planet mit versioniertem Generator (`GENERATOR_VERSION = 4`), 17 Biomen, Höhenstufen, Ressourcenvorkommen und Gefahrenzonen; deterministisch aus `${galaxySeed}:${planet.id}:surface:v4`. Dwarf-Fortress-nahe Felder für Temperatur, Niederschlag, Abfluss und Wildheit erzeugen Klimagürtel, Regenschatten, Flussniederungen, Wälder, Dschungel, Marschen und Gletscher. Gasriesen erhalten eine reine Wolkenschicht, Vulkanwelten Lavaseen, Giftwelten Xenoflora.
-- **Pixel-Tiles & Platzhalter (ADR-049, ADR-056):** `PlanetSurfaceCanvas` zeichnet die 32×32-Kacheln aus `Tilesets/Planetenbiome` als Basis plus transparenten Aufsatz, mit deterministischer Variantenwahl, Küstenwasser und Höhenschattierung. Lava- und Vulkangelände nutzen die echten hochauflösenden Kacheln aus `Tilesets/Planetenbiome/Lava` (Lavasee, erstarrte Kruste, Basalt, Vulkankegel) über einen `bleed`-Faktor für den transparenten Rand. Für Gas-, Gift- und Xeno-Biome, die im Tileset fehlen, zeichnet der Canvas weiterhin prozedurale Platzhalter (Wolkengürtel, Säuretümpel, Biolumineszenz); fehlt eine Lavagrafik, greift die Basalt-Fallback-Farbe.
+- **Prozedurale Hex-Oberfläche (ADR-049, ADR-057):** Die Oberfläche ist nicht mehr fest 18 × 10, sondern wird deterministisch aus Planetentyp, Planet-ID und Galaxie-Seed aufgelöst (`src/surface/surfaceSize.ts`): harte Grenzen 6–36 × 6–24, maximal 864 Kacheln, typabhängige Bereiche (z. B. Ozean 18–26 × 10–15, Gasriese 12–18 × 8–11, Xenowelt 17–24 × 10–14). Gespeicherte oder explizit übergebene Maße haben Vorrang. Generatorversion `GENERATOR_VERSION = 5`, Seed `${galaxySeed}:${planet.id}:surface:v5`; 17 Biome, Höhenstufen, Ressourcenvorkommen und Gefahrenzonen. Dwarf-Fortress-nahe Felder für Temperatur, Niederschlag, Abfluss und Wildheit erzeugen Klimagürtel, Regenschatten, Flussniederungen, Wälder, Dschungel, Marschen und Gletscher. Gasriesen erhalten eine reine Wolkenschicht, Vulkanwelten Lavaseen, Giftwelten Xenoflora, Xenowelten eine fremdartige Biosphäre aus vorhandenen Biomen.
+- **Ozeanwelten (ADR-057):** Höchstens 15 % Land, mindestens 85 % Wasser, unabhängig von der Kartengröße. Die Landquote wird aus den tatsächlichen Kacheln gezählt (Küsten zählen als Land), die harte Grenze ist `floor(kacheln · 0,15)`. Die Landezone erzeugt kein zusätzliches Land, sondern verschiebt vorhandenes Land in Kern und bis zu drei Nachbarn; `enforceOceanLandCap` entfernt danach jede überschüssige Landkachel konsistent.
+- **Pixel-Tiles (ADR-049, ADR-056, ADR-057):** `PlanetSurfaceCanvas` zeichnet die Kacheln aus `Tilesets/Planetenbiome` als Basis plus transparenten Aufsatz, mit deterministischer Variantenwahl, Küstenwasser und Höhenschattierung. Lava/Vulkangestein (`LAVA_TILE_*`, `MOUNTAIN_HEX_*`), Gasriesen (`GAS_YELLOW_*`, `GAS_BLUE_*` nach Planetenfarbe), Giftwelten (`GIFT_*`, inklusive Säuresee), Xenowelten (`XENO_*`) und Gesteinswelten (`ROCK_HEX_*` für Gebirge) nutzen echte Assets. Die quadratischen Punkt-Hex-Grafiken werden über `box: 'square'` und einen je Datei gemessenen `bleed`-Faktor lückenlos gezeichnet. Fehlt ein Bild, greift die Biome-Farbe; der prozedurale Platzhalter bleibt nur für fremdartige Biome außerhalb von Xeno-/Giftwelten und für fehlende Assets.
 - **Fog of War & Sichtbarkeit:** `unseen` / `discovered` / `visible`, aufgedeckt über `SurfaceManager.revealTilesAround()` und Geländekosten-basierte Bewegung.
 - **Kolonieökonomie (`EconomyEngine`):** Sieben Ressourcen (Nahrung, Produktion, Energie, Mineralien, seltene Ressourcen, Forschung, Einfluss), Brutto-/Nettoerträge, Unterhalt, Energiedefizit mit −25% Effizienz und Bevölkerungswachstum (`50 · pop^1.3`, habitabilitätsabhängig ×0,25–1,0).
 - **Staatsfinanzen (Wirtschaft Stufe A, ADR-032):** Jede Kolonie besitzt einen Steuersatz (0–60 %, Standard 30 %), aus dem sich Korruption (tierabhängig 10–35 %, ab 40 % Steuersatz steigend) und Approval (0–100, Basis 50) ergeben. Die Steuereinnahmen (`Bevölkerungseinheiten × 6 × Steuersatz × (1 − Korruption)`) fließen pro Runde einmalig in die Staatskasse der Zivilisation; Approval wirkt auf das Bevölkerungswachstum (Faktor 0,5–1,5). Regler, Voreinstellungen und Projektion liegen im Tab „Steuern" des `ColonyManagementModal`. Das Bewegen des Reglers berechnet nur Steuerzustand und Erträge neu; Lagerbestände und Bevölkerung ändern sich erst im Rundenwechsel (ADR-040).
@@ -138,6 +140,7 @@ npm run build
 - **Arbeitskraft & Bewirtschaftung:** Automatische Zuteilung der Bürger auf Hexfelder nach Arbeitsfokus (`balanced`, `food`, `production`, `energy`, `minerals`, `research`) mit Sperrung einzelner Tiles.
 - **Territoriale Expansion:** Einfluss-basierte Gebietsansprüche mit gestaffelten Kosten (`15 + 5·Distanz + 2·bereits beanspruchte Tiles`).
 - **Bauwesen (`BuildQueueManager`):** Gebäudekatalog mit Baukosten, Biomanbindung, Bauzeit, Upgrades (`Stufe × Level`) und Truppenrekrutierung über dieselbe Warteschlange. Ausbauten ohne definierte Bauzeit (Koloniezentrum, `baseProductionCost: 0`) werden sofort abgeschlossen, statt als 0-Runden-Eintrag in der Warteschlange zu hängen; gespeicherte Altbestände werden beim Rundenwechsel kontrolliert fertiggestellt, fehlende Bauzeiten beim Laden aus dem Katalog rekonstruiert (ADR-056).
+- **Gasriesen & Gaskollektoren (ADR-057):** Auf Gasriesen ist keine normale Bodenkolonie möglich. Die Gründung erzeugt eine Gasförderplattform (`gas_extraction_hub`) statt eines Koloniezentrums; baubar sind dort ausschließlich Gebäude mit `allowedPlanetTypes: ['gas_giant']`. Der `gas_collector` produziert seltene Ressourcen, Energie und Produktion, benötigt die Technologie `gas_extraction` (Engineering, Tier 2, 120, Voraussetzung `automated_assembly`) und wird zentral über `BuildValidationContext` geprüft – auch direkte Bauaufrufe ohne Kontext werden abgelehnt.
 - **Forschung (`ResearchManager`):** Technologiekatalog mit Voraussetzungs-DAG, Forschungsinvestition und Abschlusserkennung.
 - **Oberflächeneinheiten (`UnitManager`):** Rekrutierung, Bewegungspunkte, Geländekosten und Pfadbewegung über Hexfelder.
 - **Zivilisationen & KI (`CivManager`):** Spielerfraktion plus zwei KI-Fraktionen, die dieselben Regel-Validatoren für Expansion und Koloniegründung nutzen.
@@ -160,7 +163,7 @@ npm run build
 
 ### 4.5 Spielstart, Bedienung & Benachrichtigungen (Feature-Paket)
 - **Hauptmenü (`MainMenu`):** Neues Spiel, Spiel laden, Galaxie-Seeds verwalten, Roadmap, QA-Tests, Testing und Spiel beenden; dazu eine Schnellspeicher-Kachel und die zuletzt gestartete Galaxie mit „Mit diesem Seed fortfahren". Roadmap und QA sind aus dem Spielmenü ins Hauptmenü gewandert; das Spielmenü enthält nur noch Speicherstände, Hauptmenü und Spiel beenden (ADR-041).
-- **Isoliertes Testlabor (ADR-056):** „Testing" öffnet eine eigene Ansicht außerhalb der Kampagne. Die Registry `src/testing/testLabRegistry.tsx` listet Testballons als eigenständige Komponenten; der erste Ballon führt den echten `SurfaceGenerator` mit Planetentyp, Breite 6–32, Höhe 6–24 und Seed aus und zeigt Reproduzierbarkeitssignatur, Lavakacheln, Kachel-Info, Ressourcen-Toggle sowie Biome-, Vorkommens-, Gefahren- und Höhenstatistiken. Weitere Ballons (Biom-Tiles, Gelände & Ressourcen, Kolonie, Bewegung, Speichern/Laden) sind als „geplant" geführt. Das Labor schreibt keine Spielstände und löst keine Rundenwechsel aus.
+- **Isoliertes Testlabor (ADR-056, ADR-057):** „Testing" öffnet eine eigene Ansicht außerhalb der Kampagne. Die Registry `src/testing/testLabRegistry.tsx` listet Testballons als eigenständige Komponenten; der erste Ballon führt den echten `SurfaceGenerator` mit Planetentyp (inklusive Xenowelt und Gasriese), Breite 6–36, Höhe 6–24 und Seed aus und zeigt Reproduzierbarkeitssignatur, Kacheln, Land-/Wasserstatistik mit Ozean-Landobergrenze, Kachel-Info, Ressourcen-Toggle sowie Biome-, Vorkommens-, Gefahren- und Höhenstatistiken. Weitere Ballons (Biom-Tiles, Gelände & Ressourcen, Kolonie, Bewegung, Speichern/Laden) sind als „geplant" geführt. Das Labor schreibt keine Spielstände und löst keine Rundenwechsel aus.
 - **Galaxieerstellung (`GalaxyCreationScreen`):** „Neue Galaxie erschaffen" nutzt die bestehenden Generatorparameter (Größen-Presets, Form, Seed mit Zufallsbutton, Systemanzahl, Mindestabstand, Name). Neu sind die Auswahl einer von acht menschlichen Fraktionen (Name, Kurzprofil, Hintergrund, Farbe, Emblem, Flottenstil) und ein Regler für 0–7 KI-Gegner mit deterministischer Vorschau. „Mit bestehendem Seed fortfahren" lädt eine gespeicherte Konfiguration (ADR-042, ADR-052).
 - **Seed-Bibliothek (`SeedLibrary`):** Jeder Spielstart merkt sich Seed, Parameter, erzeugte Systemanzahl, Generatorversion und Zeitstempel unter `astraea_4x_seed_library`. Gleiche Konfigurationen ergeben denselben Eintrag; maximal 100 Einträge. Ein geladener Spielstand enthält die vollständige Galaxie und regeneriert nichts.
 - **Startflotte:** Kleine Fregatte, Aufklärungsschiff und Kolonieschiff stehen als drei getrennte Verbände im Heimatsystem. Kolonisten und Gründungsgüter liegen ausschließlich in der Schifffracht; es gibt keine automatische Kolonie und keine doppelte Gutschrift im globalen Lager (ADR-043).
@@ -179,4 +182,4 @@ npm run build
 - [`docs/PHASE_1.md`](docs/PHASE_1.md): Dokumentation und Testergebnisse für Modul 1 bis Modul 4.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md): Vollständige Phasenübersicht und aktueller Umsetzungsstand.
 - [`docs/MOO2_TURNLOGIK_BEFUNDE.md`](docs/MOO2_TURNLOGIK_BEFUNDE.md): Belege zur Zug- und Flottenlogik von Master of Orion 2 (Beobachtung, Inferenz, Unbekannt).
-- [`docs/DECISIONS.md`](docs/DECISIONS.md): Architectural Decision Records (ADR-001 bis ADR-056).
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): Architectural Decision Records (ADR-001 bis ADR-057).

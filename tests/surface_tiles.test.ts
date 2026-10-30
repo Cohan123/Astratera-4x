@@ -92,7 +92,7 @@ describe('Surface Tile Mapping', () => {
     ).toBe('TILE_FLOODPLAINS');
   });
 
-  it('4. Lava und Vulkangestein nutzen echte Tiles, übrige Fremdbiome Platzhalter', () => {
+  it('4. Lava, Gas, Gift und Xeno nutzen echte Tiles, übrige Fremdbiome Platzhalter', () => {
     expect(selectSurfaceTileArt(createTile('lava'), context()).base).toMatch(
       /^LAVA_TILE_(2|0)$/
     );
@@ -102,8 +102,27 @@ describe('Surface Tile Mapping', () => {
     expect(selectSurfaceTileArt(createTile('lava'), context()).placeholder).toBeUndefined();
     expect(selectSurfaceTileArt(createTile('volcanic'), context()).placeholder).toBeUndefined();
 
-    expect(selectSurfaceTileArt(createTile('gas'), context()).placeholder).toBe('gas');
-    expect(selectSurfaceTileArt(createTile('toxic'), context()).placeholder).toBe('toxic');
+    const gas = selectSurfaceTileArt(createTile('gas'), context({ planetType: 'gas_giant' }));
+    expect(gas.base).toMatch(/^GAS_YELLOW_[1-5]$/);
+    expect(gas.box).toBe('square');
+    expect(gas.placeholder).toBeUndefined();
+
+    const blueGas = selectSurfaceTileArt(
+      createTile('gas'),
+      context({ planetType: 'gas_giant', planetColor: '#3b82f6' })
+    );
+    expect(blueGas.base).toMatch(/^GAS_BLUE_[1-5]$/);
+
+    expect(selectSurfaceTileArt(createTile('toxic'), context()).base).toMatch(/^GIFT_/);
+
+    const xenoAlien = selectSurfaceTileArt(
+      createTile('alien'),
+      context({ planetType: 'xeno' })
+    );
+    expect(xenoAlien.base).toMatch(/^XENO_/);
+    expect(xenoAlien.box).toBe('square');
+
+    // Außerhalb von Xeno-/Giftwelten bleibt der fremdartige Platzhalter.
     expect(selectSurfaceTileArt(createTile('alien'), context()).placeholder).toBe('alien');
     expect(selectSurfaceTileArt(createTile('fungal_forest'), context()).placeholder).toBe('alien');
   });
@@ -123,8 +142,12 @@ describe('Surface Tile Mapping', () => {
     expect(hills.base).toMatch(/^LAVA_TILE_(1|3)$/);
     expect(hills.overlay).toMatch(/^MOUNTAIN_HEX_[13]$/);
 
-    // Außerhalb von Vulkanwelten bleibt die bestehende Bergzuordnung erhalten.
-    const terrestrial = selectSurfaceTileArt(createTile('mountains'), context());
+    // Außerhalb von Vulkan- und Gesteinswelten bleibt die bestehende
+    // Bergzuordnung erhalten; Gesteinswelten nutzen die Felskacheln.
+    const terrestrial = selectSurfaceTileArt(
+      createTile('mountains'),
+      context({ planetType: 'desert' })
+    );
     expect(terrestrial.base).toMatch(/^TILE_MOUNTAIN/);
   });
 
@@ -160,5 +183,85 @@ describe('Surface Tile Mapping', () => {
     expect(surfaceTileVariant('SURFACE-A', '2,2')).not.toBe(first);
     expect(first).toBeGreaterThanOrEqual(0);
     expect(Number.isInteger(first)).toBe(true);
+  });
+
+  it('8. Xenowelten decken alle Kernbiome mit vorhandenen Tiles oder Platzhaltern ab', () => {
+    const biomes: HexBiome[] = [
+      'ocean',
+      'plains',
+      'forest',
+      'jungle',
+      'marsh',
+      'desert',
+      'tundra',
+      'snow',
+      'hills',
+      'mountains',
+      'impact_crater',
+      'alien',
+      'fungal_forest',
+    ];
+    for (const biome of biomes) {
+      const art = selectSurfaceTileArt(
+        createTile(biome),
+        context({ planetType: 'xeno', variant: 3 })
+      );
+      expect(
+        Boolean(art.base || art.placeholder),
+        `Xeno-Biom ${biome} ohne Grafik oder Platzhalter`
+      ).toBe(true);
+    }
+  });
+
+  it('9. Bleed gleicht den sichtbaren Rand je Asset aus', () => {
+    // Giftgewässer füllt nur 77 % der Bildhöhe, Ebenen dagegen 89–94 %.
+    const acidSea = selectSurfaceTileArt(
+      createTile('ocean'),
+      context({ planetType: 'toxic' })
+    );
+    expect(acidSea.base).toBe('GIFT_VERSEUCHTES_GEWAESSER');
+    expect(acidSea.bleed).toBeCloseTo(1.32, 5);
+
+    const acidMarsh = selectSurfaceTileArt(
+      createTile('marsh'),
+      context({ planetType: 'toxic' })
+    );
+    expect(acidMarsh.base).toBe('GIFT_VERSEUCHTES_GEWAESSER');
+    expect(acidMarsh.bleed).toBeCloseTo(1.32, 5);
+
+    const giftForest = selectSurfaceTileArt(
+      createTile('forest'),
+      context({ planetType: 'toxic' })
+    );
+    expect(giftForest.base).toMatch(/^GIFT_(WALD|EBENE_KRISTRAL)$/);
+    expect(giftForest.bleed).toBeCloseTo(1.1, 5);
+
+    const yellowGas = selectSurfaceTileArt(
+      createTile('gas'),
+      context({ planetType: 'gas_giant' })
+    );
+    expect(yellowGas.bleed).toBeCloseTo(1.07, 5);
+
+    const blueGas = selectSurfaceTileArt(
+      createTile('gas'),
+      context({ planetType: 'gas_giant', planetColor: '#3b82f6' })
+    );
+    expect(blueGas.bleed).toBeCloseTo(1.12, 5);
+
+    const xenoPlains = selectSurfaceTileArt(
+      createTile('plains'),
+      context({ planetType: 'xeno' })
+    );
+    // Variante 1 ist XENO_SLIME_PLAIN_FIELDS (99 % Füllhöhe), Variante 0
+    // XENO_PLAIN_GROUND (97 %).
+    expect([1.05, 1.07]).toContain(xenoPlains.bleed);
+
+    // Gesteinswelten nutzen die vorhandenen Felskacheln für Gebirge.
+    const rockyMountains = selectSurfaceTileArt(
+      createTile('mountains'),
+      context({ planetType: 'rocky' })
+    );
+    expect(rockyMountains.base).toMatch(/^ROCK_HEX_[0-2]$/);
+    expect(rockyMountains.bleed).toBeCloseTo(1.02, 5);
   });
 });

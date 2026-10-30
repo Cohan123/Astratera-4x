@@ -1509,6 +1509,7 @@ export default function App() {
         surface={activeColonyForModal ? engine.getSurfaceManager().getSurface(activeColonyForModal.planetId) : null}
         habitabilityPercent={activeColonyPlanet?.habitability}
         planetType={activeColonyPlanet?.planetType}
+        completedTechIds={playerCiv.researchState.completedTechIds}
         targetHexForBuild={selectedHexCoord}
         initialTab={colonyModalTab}
         onClose={() => setIsColonyModalOpen(false)}

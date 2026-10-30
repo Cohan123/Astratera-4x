@@ -19,6 +19,7 @@ import {
   WaterCategory,
 } from '../core/types.ts';
 import { PLANET_CATALOG } from '../data/planetCatalog.ts';
+import { PLANET_GENERATION_CONFIG } from './planetGenerationConfig.ts';
 import { SeededPRNG } from './prng.ts';
 
 export class PlanetGenerator {
@@ -131,6 +132,9 @@ export class PlanetGenerator {
       let geologicalStability: 'stable' | 'tectonic_activity' | 'extreme_volcanism' = 'stable';
       if (planetType === 'volcanic') {
         geologicalStability = 'extreme_volcanism';
+      } else if (planetType === 'xeno') {
+        // Fremdartige Tektonik: häufig aktiv, aber nicht zwingend vulkanisch.
+        geologicalStability = prng.next() < 0.35 ? 'tectonic_activity' : 'stable';
       } else if (planetType === 'toxic' || tempCategory === 'hot') {
         geologicalStability = prng.next() < 0.4 ? 'tectonic_activity' : 'stable';
       }
@@ -293,6 +297,7 @@ export class PlanetGenerator {
         { item: 'toxic' as PlanetType, weight: 30 },
         { item: 'desert' as PlanetType, weight: 20 },
         { item: 'rocky' as PlanetType, weight: 15 },
+        { item: 'xeno' as PlanetType, weight: PLANET_GENERATION_CONFIG.xenoworldWeight.inner },
       ]);
     }
 
@@ -303,6 +308,7 @@ export class PlanetGenerator {
         { item: 'desert' as PlanetType, weight: 20 },
         { item: 'ice' as PlanetType, weight: 12 },
         { item: 'gas_giant' as PlanetType, weight: 8 }, // Hot jupiters/outer fringe
+        { item: 'xeno' as PlanetType, weight: PLANET_GENERATION_CONFIG.xenoworldWeight.habitable },
       ]);
     }
 
@@ -312,6 +318,7 @@ export class PlanetGenerator {
       { item: 'ice' as PlanetType, weight: 35 },
       { item: 'rocky' as PlanetType, weight: 12 },
       { item: 'toxic' as PlanetType, weight: 8 },
+      { item: 'xeno' as PlanetType, weight: PLANET_GENERATION_CONFIG.xenoworldWeight.outer },
     ]);
   }
 
@@ -334,6 +341,7 @@ export class PlanetGenerator {
     if (planetType === 'toxic') modifier = 1.8; // Runaway greenhouse
     if (planetType === 'ice') modifier = 0.75; // High albedo
     if (planetType === 'ocean') modifier = 1.05;
+    if (planetType === 'xeno') modifier = 0.95; // Fremdartige, aber stabile Biosphäre
 
     const jitter = prng.nextFloat(0.92, 1.08);
     const tempK = Math.max(30, Math.min(1800, Math.round(baseTempK * modifier * jitter)));
@@ -373,6 +381,10 @@ export class PlanetGenerator {
 
     if (planetType === 'toxic') {
       return prng.pick(['toxic', 'corrosive', 'dense'] as AtmosphereType[]);
+    }
+
+    if (planetType === 'xeno') {
+      return prng.pick(['toxic', 'corrosive', 'thin'] as AtmosphereType[]);
     }
 
     if (zone === 'habitable' && (tempCategory === 'temperate' || tempCategory === 'cold')) {
@@ -418,6 +430,14 @@ export class PlanetGenerator {
 
     if (planetType === 'gas_giant' || planetType === 'volcanic') {
       return 'none';
+    }
+
+    if (planetType === 'xeno') {
+      return prng.pickWeighted([
+        { item: 'moderate' as WaterCategory, weight: 60 },
+        { item: 'trace' as WaterCategory, weight: 30 },
+        { item: 'abundant' as WaterCategory, weight: 10 },
+      ]);
     }
 
     if (tempCategory === 'scorching') {

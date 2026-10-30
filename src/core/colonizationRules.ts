@@ -119,19 +119,37 @@ export class ColonizationValidator {
       };
     }
 
-    // 4. Gas Giant check
-    if (planet.planetType === 'gas_giant') {
-      return {
-        allowed: false,
-        reason: 'Gasriesen besitzen keine feste Planetenoberfläche für Bodenkolonien.',
-      };
-    }
-
-    // 5. Lethal radiation check
+    // 4. Lethal radiation check
     if (planet.radiationHazard === 'lethal') {
       return {
         allowed: false,
         reason: 'Tödliche kosmische Strahlung schließt eine Kolonisation ohne fortgeschrittene Schildtechnologie aus.',
+      };
+    }
+
+    // 5. Gasriesen: keine normale Bodenkolonie, aber eine reine
+    // Gasförderplattform. Die Bauregeln lassen dort ausschließlich die dafür
+    // vorgesehenen Anlagen zu (siehe BuildQueueManager).
+    if (planet.planetType === 'gas_giant') {
+      return {
+        allowed: true,
+        assessment: {
+          score: 0,
+          tier: 'uninhabitable',
+          categoryLabel: 'Gasförderung ohne feste Oberfläche',
+          factors: [
+            {
+              title: 'Gasförderplattform',
+              impactPercent: 0,
+              isPositive: false,
+              description:
+                'Keine feste Kruste. Zulässig sind nur Gasförderplattform und Gaskollektoren.',
+            },
+          ],
+          canColonizeNormally: false,
+          summary:
+            'Gasriesen können nicht normal besiedelt werden, aber mit einer Gasförderplattform wirtschaftlich genutzt werden.',
+        },
       };
     }
 

@@ -207,7 +207,12 @@ export const HexTileInspector: React.FC<HexTileInspectorProps> = ({
       ? `${buildingDef.name} · Stufe ${buildingInstance.level}/${buildingDef.maxLevel}`
       : undefined;
 
-  const cityCenterBuilding = colony?.buildings.find((b) => b.buildingDefId === 'city_center') ?? null;
+  const cityCenterBuilding =
+    colony?.buildings.find(
+      (b) =>
+        b.hexCoord.q === colony.cityCenterCoord.q &&
+        b.hexCoord.r === colony.cityCenterCoord.r
+    ) ?? null;
   const developmentSummary = tile.isCityCenter
     ? `Koloniezentrum · ${COLONY_TIER_LABELS[colony?.developmentTier ?? 'outpost']}`
     : buildingInstance && buildingDef

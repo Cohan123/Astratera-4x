@@ -13,8 +13,15 @@ import {
   Colony,
   HexCoord,
   PlanetSurface,
+  PlanetType,
   SurfaceUnit,
 } from './types.ts';
+
+/** Kontext für zentrale Bauprüfungen (Planetentyp, erforschte Technologien). */
+export interface BuildValidationContext {
+  planetType?: PlanetType;
+  completedTechIds?: readonly string[];
+}
 
 export interface QueueUpgradeResult {
   success: boolean;
@@ -125,12 +132,59 @@ export class BuildQueueManager {
     colony: Colony,
     surface: PlanetSurface | null | undefined,
     buildingDefId: string,
-    targetCoord: HexCoord
+    targetCoord: HexCoord,
+    context: BuildValidationContext = {}
   ): { success: boolean; reason?: string } {
     const bDef = BUILDING_CATALOG[buildingDefId];
     if (!bDef) return { success: false, reason: 'Unbekannte Gebäudedefinition.' };
 
     const targetKey = HexMath.coordToKey(targetCoord);
+
+    // Planetentyp zentral bestimmen. Explizite Angaben haben Vorrang; sonst
+    // dient die Gas-Wolkenschicht als eindeutiger Oberflächenhinweis. Die
+    // harte Gasriesen-Regel unten hängt nicht von der GUI ab.
+    const planetType =
+      context.planetType ??
+      (surface?.tiles.some((tile) => tile.biome === 'gas') ? 'gas_giant' : undefined);
+
+    // Technologie-Gate: zentral in den Gebäudedaten, nicht in der GUI.
+    if (bDef.requiredTechId) {
+      if (!context.completedTechIds) {
+        return {
+          success: false,
+          reason: `Erforderliche Technologie nicht geprüft: ${bDef.requiredTechId}.`,
+        };
+      }
+      if (!context.completedTechIds.includes(bDef.requiredTechId)) {
+        return {
+          success: false,
+          reason: `Erforderliche Technologie nicht erforscht: ${bDef.requiredTechId}.`,
+        };
+      }
+    }
+
+    if (planetType) {
+      if (bDef.disallowedPlanetTypes?.includes(planetType)) {
+        return {
+          success: false,
+          reason: `Gebäude kann nicht auf Planetentyp ${planetType} errichtet werden.`,
+        };
+      }
+      if (bDef.allowedPlanetTypes && !bDef.allowedPlanetTypes.includes(planetType)) {
+        return {
+          success: false,
+          reason: `Gebäude ist nur für Planetentypen ${bDef.allowedPlanetTypes.join(', ')} zugelassen.`,
+        };
+      }
+      // Gasriesen sind kein normaler Boden: Ohne ausdrückliche Eignung wird
+      // jede Bodenbebauung abgelehnt.
+      if (planetType === 'gas_giant' && !bDef.allowedPlanetTypes?.includes('gas_giant')) {
+        return {
+          success: false,
+          reason: 'Auf Gasriesen sind ausschließlich Gasförderanlagen zulässig.',
+        };
+      }
+    }
 
     if (surface) {
       const tile = surface.tiles.find((t) => t.key === targetKey);
@@ -190,11 +244,18 @@ export class BuildQueueManager {
     colony: Colony,
     surface: PlanetSurface,
     buildingDefId: string,
-    preferredCoord?: HexCoord | null
+    preferredCoord?: HexCoord | null,
+    context: BuildValidationContext = {}
   ): HexCoord | null {
     if (
       preferredCoord &&
-      BuildQueueManager.validateBuildingPlacement(colony, surface, buildingDefId, preferredCoord).success
+      BuildQueueManager.validateBuildingPlacement(
+        colony,
+        surface,
+        buildingDefId,
+        preferredCoord,
+        context
+      ).success
     ) {
       return preferredCoord;
     }
@@ -202,7 +263,13 @@ export class BuildQueueManager {
     const candidates = surface.tiles.filter(
       (tile) =>
         tile.claimedByColonyId === colony.id &&
-        BuildQueueManager.validateBuildingPlacement(colony, surface, buildingDefId, tile.coord).success
+        BuildQueueManager.validateBuildingPlacement(
+          colony,
+          surface,
+          buildingDefId,
+          tile.coord,
+          context
+        ).success
     );
     if (candidates.length === 0) return null;
 
@@ -227,7 +294,8 @@ export class BuildQueueManager {
     targetCoord: HexCoord,
     arg4?: PlanetSurface | number,
     arg5?: number,
-    treasuryHolder?: { treasury: number }
+    treasuryHolder?: { treasury: number },
+    context: BuildValidationContext = {}
   ): { success: boolean; reason?: string } {
     let surface: PlanetSurface | undefined;
     let currentTurn: number = 1;
@@ -246,7 +314,8 @@ export class BuildQueueManager {
       colony,
       surface,
       buildingDefId,
-      targetCoord
+      targetCoord,
+      context
     );
     if (!placement.success) return placement;
 

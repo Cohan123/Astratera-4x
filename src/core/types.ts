@@ -65,7 +65,8 @@ export type PlanetType =
   | 'ocean' // Ozeanplanet
   | 'volcanic' // Vulkanplanet
   | 'gas_giant' // Gasriese
-  | 'toxic'; // Giftiger / Unwirtlicher Planet
+  | 'toxic' // Giftiger / Unwirtlicher Planet
+  | 'xeno'; // Seltene Xenowelt mit fremdartiger Biosphäre
 
 export type AtmosphereType =
   | 'none' // Vakuum / Keine
@@ -181,6 +182,13 @@ export interface Planet {
   moons?: Moon[];
   surfaceSeed?: string; // Seed for deterministic surface hex map
   surfaceGenerated?: boolean;
+  /**
+   * Aufgelöste Oberflächenabmessungen. Sie werden beim ersten Erzeugen aus
+   * Planetentyp + Seed bestimmt und im Spielstand mitgespeichert, damit eine
+   * Oberfläche nach dem Laden nicht mit anderen Maßen neu generiert wird.
+   */
+  surfaceWidth?: number;
+  surfaceHeight?: number;
   notes?: string;
 }
 
@@ -307,8 +315,8 @@ export interface PlanetHexTile {
 
 export interface PlanetSurface {
   planetId: string;
-  width: number; // 16 bis 24 Spalten
-  height: number; // 10 bis 16 Zeilen
+  width: number; // 6 bis 36 Spalten (siehe surfaceSize.ts)
+  height: number; // 6 bis 24 Zeilen (siehe surfaceSize.ts)
   generatorVersion: number;
   seed: string;
   tiles: PlanetHexTile[];
@@ -374,6 +382,10 @@ export interface BuildingDef {
   requiredTechId?: string;
   allowedBiomes?: HexBiome[];
   disallowedBiomes?: HexBiome[];
+  /** Whitelist für Planetentypen; auf Gasriesen ist sie zwingend. */
+  allowedPlanetTypes?: PlanetType[];
+  /** Explizite Sperre für Planetentypen, etwa feste Bodenbauten. */
+  disallowedPlanetTypes?: PlanetType[];
 }
 
 export interface BuildingInstance {

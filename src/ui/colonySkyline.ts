@@ -20,6 +20,7 @@ export const SKYLINE_VIEWBOX = { width: 640, height: 270 } as const;
 
 export type SkylineKind =
   | 'city_center'
+  | 'gas_hub'
   | 'hydro_dome'
   | 'solar_field'
   | 'geothermal'
@@ -33,6 +34,7 @@ export type SkylineKind =
 
 const KIND_BY_DEF: Record<string, SkylineKind> = {
   city_center: 'city_center',
+  gas_extraction_hub: 'gas_hub',
   hydroponics_dome: 'hydro_dome',
   solar_array: 'solar_field',
   geothermal_plant: 'geothermal',
@@ -167,14 +169,21 @@ export function getSkylineBuildings(colony: Colony): SkylineBuilding[] {
     });
   };
 
-  const centerBuilding = colony.buildings.find((b) => b.buildingDefId === 'city_center');
+  // Das Führungsgebäude wird über die Lage des Koloniezentrums bestimmt, nicht
+  // über die Katalog-ID: Auf Gasriesen steht dort eine Gasförderplattform statt
+  // eines festen Koloniezentrums.
+  const centerBuilding = colony.buildings.find(
+    (b) =>
+      b.hexCoord.q === colony.cityCenterCoord.q &&
+      b.hexCoord.r === colony.cityCenterCoord.r
+  );
   if (centerBuilding) {
     const def = BUILDING_CATALOG[centerBuilding.buildingDefId];
     place(centerCell, {
       id: centerBuilding.id,
       buildingDefId: centerBuilding.buildingDefId,
       name: def?.name ?? 'Kolonie-Zentrum',
-      kind: 'city_center',
+      kind: getSkylineKind(centerBuilding.buildingDefId),
       level: centerBuilding.level,
       active: centerBuilding.isActive,
       underConstruction: false,

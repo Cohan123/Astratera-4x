@@ -6,6 +6,7 @@
 import { HexCoord, Planet, PlanetHexTile, PlanetSurface } from '../core/types.ts';
 import { BIOME_CATALOG } from '../data/terrainCatalog.ts';
 import { HexMath } from './hexMath.ts';
+import { resolveSurfaceSize } from './surfaceSize.ts';
 import { SurfaceGenerator } from './surfaceGenerator.ts';
 
 export class SurfaceManager {
@@ -17,7 +18,17 @@ export class SurfaceManager {
   public getOrCreateSurface(planet: Planet, galaxySeed: string): PlanetSurface {
     let surface = this.surfaces.get(planet.id);
     if (!surface) {
+      // Maße einmalig am Planeten festschreiben. Dadurch bleibt die Oberfläche
+      // auch nach Save/Load und über Sitzungen hinweg identisch, selbst wenn
+      // sich die Standardbereiche später ändern.
+      if (!Number.isFinite(planet.surfaceWidth) || !Number.isFinite(planet.surfaceHeight)) {
+        const size = resolveSurfaceSize(planet, galaxySeed);
+        planet.surfaceWidth = size.width;
+        planet.surfaceHeight = size.height;
+      }
       surface = SurfaceGenerator.generateSurface(planet, galaxySeed);
+      planet.surfaceSeed = surface.seed;
+      planet.surfaceGenerated = true;
       this.surfaces.set(planet.id, surface);
     }
     return surface;

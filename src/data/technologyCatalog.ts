@@ -118,6 +118,19 @@ export const TECHNOLOGY_CATALOG: Record<string, TechnologyDef> = {
       buildings: ['smelter_refinery'],
     },
   },
+  gas_extraction: {
+    id: 'gas_extraction',
+    name: 'Industrielle Gasgewinnung',
+    category: 'engineering',
+    tier: 2,
+    cost: 120,
+    description:
+      'Ermöglicht Gaskollektoren zur wirtschaftlichen Förderung von Wasserstoff, Helium und Spurengasen aus Gasriesen.',
+    prerequisites: ['automated_assembly'],
+    unlocks: {
+      buildings: ['gas_collector'],
+    },
+  },
   planetary_logistics_prep: {
     id: 'planetary_logistics_prep',
     name: 'Interkoloniale Logistiknetzwerke',
