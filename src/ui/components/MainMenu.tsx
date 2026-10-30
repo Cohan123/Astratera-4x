@@ -27,6 +27,7 @@ interface MainMenuProps {
   onManageSeeds: () => void;
   onOpenRoadmap: () => void;
   onOpenTests: () => void;
+  onOpenTesting: () => void;
   onExit: () => void;
   onContinueLastSeed: () => void;
 }
@@ -78,6 +79,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onManageSeeds,
   onOpenRoadmap,
   onOpenTests,
+  onOpenTesting,
   onExit,
   onContinueLastSeed,
 }) => {
@@ -137,6 +139,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             />
             <MenuAction label="Roadmap" hint="Phasen und Meilensteine" onClick={onOpenRoadmap} />
             <MenuAction label="QA-Tests" hint="Regel- und Simulationsprüfungen" onClick={onOpenTests} />
+            <MenuAction
+              label="Testing"
+              hint="Isoliertes Testlabor für Spielmechaniken"
+              onClick={onOpenTesting}
+            />
             <MenuAction label="Spiel beenden" hint="Sitzung verlassen" onClick={onExit} />
           </div>
 

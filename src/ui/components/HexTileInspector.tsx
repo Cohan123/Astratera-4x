@@ -49,6 +49,12 @@ interface HexTileInspectorProps {
   onRemoveDistrict: (districtId: string) => void;
   onSelectUnit: (unitId: string | null) => void;
   onClose: () => void;
+  /**
+   * Blendet koloniegebundene Abschnitte (Bebauung, Territorium, Distrikte,
+   * Bauaktionen) aus. Das Testlabor nutzt denselben Inspector, zeigt aber nur
+   * Gelände-, Ertrags- und Vorkommensdaten.
+   */
+  showColonySections?: boolean;
 }
 
 type SectionKey =
@@ -106,6 +112,7 @@ export const HexTileInspector: React.FC<HexTileInspectorProps> = ({
   onRemoveDistrict,
   onSelectUnit,
   onClose,
+  showColonySections = true,
 }) => {
   const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>({
     terrain: true,
@@ -386,6 +393,8 @@ export const HexTileInspector: React.FC<HexTileInspectorProps> = ({
           )}
         </Section>
 
+        {showColonySections && (
+          <>
         {/* Bebauungsstatus */}
         <Section
           title="Bebauungsstatus"
@@ -617,6 +626,8 @@ export const HexTileInspector: React.FC<HexTileInspectorProps> = ({
           >
             + Neues Gebäude errichten
           </button>
+        )}
+          </>
         )}
 
         {/* Units stationed on Tile */}

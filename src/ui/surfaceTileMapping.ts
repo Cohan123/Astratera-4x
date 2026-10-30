@@ -24,6 +24,11 @@ export interface SurfaceTileArt {
   emblem?: 'crater';
   /** Dezente Farbtönung über der Kachel (z. B. Eisdecke). */
   tint?: string;
+  /**
+   * Skalierungsfaktor für Assets mit transparentem Rand (Lava- und
+   * Bergkacheln). 1 = Kachel füllt das Hex-Rechteck exakt.
+   */
+  bleed?: number;
   /** Fallback-Farbe, solange das Bild noch nicht geladen ist. */
   fallbackColor: string;
 }
@@ -54,6 +59,30 @@ function variant(base: string, count: number, index: number): string {
   if (count <= 1) return base;
   const slot = index % count;
   return slot === 0 ? base : `${base}_${slot + 1}`;
+}
+
+/**
+ * Lava-/Vulkankacheln liegen als einzelne, hochauflösende Hex-Grafiken vor.
+ * Die Zuordnung orientiert sich an der tatsächlich sichtbaren Oberfläche:
+ *  - LAVA_TILE_1 / _3 / _BASALT: erstarrte, begehbare Lavakruste
+ *  - LAVA_TILE_0: glühende Risse (höheres Gelände)
+ *  - LAVA_TILE_2: offener Lavasee (unpassierbar)
+ *  - MOUNTAIN_HEX_0..3: Vulkankegel, Caldera und zerklüftetes Hochland
+ */
+const LAVA_CRUST_TILES = ['LAVA_TILE_1', 'LAVA_TILE_3', 'LAVA_TILE_BASALT', 'LAVA_TILE_0'];
+const LAVA_MOLTEN_TILES = ['LAVA_TILE_2', 'LAVA_TILE_2', 'LAVA_TILE_0'];
+const VOLCANIC_MOUNTAIN_TILES = [
+  'MOUNTAIN_HEX_0',
+  'MOUNTAIN_HEX_1',
+  'MOUNTAIN_HEX_2',
+  'MOUNTAIN_HEX_3',
+];
+
+/** Die Lavakacheln besitzen rundum einen transparenten Rand (ca. 8 %). */
+const LAVA_TILE_BLEED = 1.18;
+
+function pickFamily(family: string[], index: number): string {
+  return family[index % family.length];
 }
 
 function fallbackClimate(biome: HexBiome): { temperature: number; rainfall: number } {
@@ -130,13 +159,18 @@ export function selectSurfaceTileArt(
       if (context.planetType === 'ice') {
         return { base: variant('TILE_TUNDRA', 3, variantIndex), fallbackColor };
       }
-      if (
-        context.planetType === 'toxic' ||
-        context.planetType === 'volcanic'
-      ) {
-        // Gift- und Vulkanwelten zeigen selbst in der Landezone nur karge
-        // Steppe; die Erträge bleiben unverändert, die Farbwelt feindlich.
+      if (context.planetType === 'toxic') {
+        // Giftwelten zeigen selbst in der Landezone nur karge Steppe; die
+        // Erträge bleiben unverändert, die Farbwelt feindlich.
         return { base: variant('TILE_PLAINS', 2, variantIndex), fallbackColor };
+      }
+      if (context.planetType === 'volcanic') {
+        // Auch die geschützte Landezone bleibt auf Vulkanwelten Basalt.
+        return {
+          base: variantIndex % 3 === 0 ? 'LAVA_TILE_BASALT' : 'LAVA_TILE_3',
+          bleed: LAVA_TILE_BLEED,
+          fallbackColor: '#241310',
+        };
       }
       if (context.nearWater && rainfall > 0.42) {
         return { base: 'TILE_FLOODPLAINS', fallbackColor };
@@ -210,11 +244,16 @@ export function selectSurfaceTileArt(
       if (context.planetType === 'desert') {
         base = variant('TILE_DESERT', 3, variantIndex);
         hills = variant('TILE_HILLS_DESERT', 3, variantIndex);
-      } else if (
-        context.planetType === 'toxic' ||
-        context.planetType === 'volcanic'
-      ) {
-        // Ascherne Hügel statt grüner Hügel auf feindlichen Welten.
+      } else if (context.planetType === 'volcanic') {
+        // Erstarrte Lavahügel mit aufragendem Vulkangestein.
+        return {
+          base: pickFamily(['LAVA_TILE_1', 'LAVA_TILE_3'], variantIndex),
+          overlay: pickFamily(['MOUNTAIN_HEX_3', 'MOUNTAIN_HEX_1'], variantIndex),
+          bleed: LAVA_TILE_BLEED,
+          fallbackColor: '#2b1712',
+        };
+      } else if (context.planetType === 'toxic') {
+        // Ascherne Hügel statt grüner Hügel auf Giftwelten.
         base = variant('TILE_PLAINS', 2, variantIndex);
         hills = variant('TILE_HILLS_PLAINS', 3, variantIndex);
       } else if (temperature < 0.24) {
@@ -237,12 +276,27 @@ export function selectSurfaceTileArt(
     }
 
     case 'mountains':
+      if (context.planetType === 'volcanic') {
+        return {
+          base: pickFamily(VOLCANIC_MOUNTAIN_TILES, variantIndex),
+          bleed: LAVA_TILE_BLEED,
+          fallbackColor: '#1d1210',
+        };
+      }
       return {
         base: variant('TILE_MOUNTAIN', 3, variantIndex),
         fallbackColor,
       };
 
     case 'impact_crater': {
+      if (context.planetType === 'volcanic') {
+        return {
+          base: 'LAVA_TILE_0',
+          emblem: 'crater',
+          bleed: LAVA_TILE_BLEED,
+          fallbackColor: '#2a0a06',
+        };
+      }
       const base =
         temperature < 0.3
           ? variant('TILE_TUNDRA', 3, variantIndex)
@@ -253,8 +307,26 @@ export function selectSurfaceTileArt(
     }
 
     case 'volcanic':
+      // Begehbares Vulkangelände: erstarrte Lavakruste, in höheren Lagen
+      // glühende Risse. Die Bewegungsregeln stammen unverändert aus dem
+      // Biomkatalog (movementCost 2.5, passierbar).
+      return {
+        base:
+          tile.elevation >= 2
+            ? 'LAVA_TILE_0'
+            : pickFamily(LAVA_CRUST_TILES, variantIndex),
+        bleed: LAVA_TILE_BLEED,
+        fallbackColor: '#2a0a06',
+      };
+
     case 'lava':
-      return { placeholder: 'lava', fallbackColor };
+      // Offener Lavasee: unpassierbar laut Biomkatalog. Die Grafik zeigt
+      // tatsächlich geschmolzenes Gestein, nicht nur eine rote Fläche.
+      return {
+        base: pickFamily(LAVA_MOLTEN_TILES, variantIndex),
+        bleed: LAVA_TILE_BLEED,
+        fallbackColor: '#1c0908',
+      };
 
     case 'gas':
       return { placeholder: 'gas', fallbackColor };

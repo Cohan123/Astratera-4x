@@ -92,13 +92,40 @@ describe('Surface Tile Mapping', () => {
     ).toBe('TILE_FLOODPLAINS');
   });
 
-  it('4. Fehlende Tilesets liefern deterministische Platzhalter', () => {
-    expect(selectSurfaceTileArt(createTile('lava'), context()).placeholder).toBe('lava');
-    expect(selectSurfaceTileArt(createTile('volcanic'), context()).placeholder).toBe('lava');
+  it('4. Lava und Vulkangestein nutzen echte Tiles, übrige Fremdbiome Platzhalter', () => {
+    expect(selectSurfaceTileArt(createTile('lava'), context()).base).toMatch(
+      /^LAVA_TILE_(2|0)$/
+    );
+    expect(selectSurfaceTileArt(createTile('volcanic'), context()).base).toMatch(
+      /^LAVA_TILE_(0|1|3|BASALT)$/
+    );
+    expect(selectSurfaceTileArt(createTile('lava'), context()).placeholder).toBeUndefined();
+    expect(selectSurfaceTileArt(createTile('volcanic'), context()).placeholder).toBeUndefined();
+
     expect(selectSurfaceTileArt(createTile('gas'), context()).placeholder).toBe('gas');
     expect(selectSurfaceTileArt(createTile('toxic'), context()).placeholder).toBe('toxic');
     expect(selectSurfaceTileArt(createTile('alien'), context()).placeholder).toBe('alien');
     expect(selectSurfaceTileArt(createTile('fungal_forest'), context()).placeholder).toBe('alien');
+  });
+
+  it('4b. Vulkanberge und -hügel verwenden die vorhandenen Bergkacheln', () => {
+    const mountains = selectSurfaceTileArt(
+      createTile('mountains', { elevation: 3 }),
+      context({ planetType: 'volcanic' })
+    );
+    expect(mountains.base).toMatch(/^MOUNTAIN_HEX_[0-3]$/);
+    expect(mountains.bleed).toBeGreaterThan(1);
+
+    const hills = selectSurfaceTileArt(
+      createTile('hills', { elevation: 2 }),
+      context({ planetType: 'volcanic' })
+    );
+    expect(hills.base).toMatch(/^LAVA_TILE_(1|3)$/);
+    expect(hills.overlay).toMatch(/^MOUNTAIN_HEX_[13]$/);
+
+    // Außerhalb von Vulkanwelten bleibt die bestehende Bergzuordnung erhalten.
+    const terrestrial = selectSurfaceTileArt(createTile('mountains'), context());
+    expect(terrestrial.base).toMatch(/^TILE_MOUNTAIN/);
   });
 
   it('5. Einschlagkrater erhält Steinaufsatz und Kraterring', () => {
@@ -110,12 +137,13 @@ describe('Surface Tile Mapping', () => {
     expect(crater.emblem).toBe('crater');
   });
 
-  it('6. Gift- und Vulkanwelten zeigen karge Steppe statt Gras', () => {
+  it('6. Giftwelten zeigen karge Steppe, Vulkanwelten Basalt statt Gras', () => {
     const volcanicPlains = selectSurfaceTileArt(
       createTile('plains'),
       context({ planetType: 'volcanic' })
     );
-    expect(volcanicPlains.base).toMatch(/^TILE_PLAINS/);
+    expect(volcanicPlains.base).toMatch(/^LAVA_TILE_(3|BASALT)$/);
+    expect(volcanicPlains.bleed).toBeGreaterThan(1);
 
     const toxicHills = selectSurfaceTileArt(
       createTile('hills', { temperature: 0.7, rainfall: 0.5 }),

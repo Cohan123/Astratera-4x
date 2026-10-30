@@ -55,6 +55,12 @@ interface PlanetSurfaceCanvasProps {
    */
   onOpenColonyManagement?: (colonyId: string) => void;
   onBackToSystem: () => void;
+  /** Beschriftung des Zurück-Knopfs (z. B. im Testlabor). */
+  backLabel?: string;
+  /** Blendet den Zurück-Knopf aus, wenn die Navigation bereits außerhalb liegt. */
+  showBackButton?: boolean;
+  /** Zeigt Ressourcenvorkommen auch ohne Aufdeckung (nur Testlabor). */
+  revealAllDeposits?: boolean;
 }
 
 export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
@@ -69,6 +75,9 @@ export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
   onMoveUnitToHex,
   onOpenColonyManagement,
   onBackToSystem,
+  backLabel = 'Zurück zum System',
+  showBackButton = true,
+  revealAllDeposits = false,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -356,7 +365,7 @@ export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
         }
 
         // Draw Revealed Resource Deposit
-        if (tile.isDepositDiscovered && tile.deposit !== 'none') {
+        if ((tile.isDepositDiscovered || revealAllDeposits) && tile.deposit !== 'none') {
           const dep = DEPOSIT_CATALOG[tile.deposit];
           ctx.save();
           ctx.font = '12px sans-serif';
@@ -462,6 +471,7 @@ export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
     viewport.width,
     viewport.height,
     viewport.dpr,
+    revealAllDeposits,
   ]);
 
   // Helper: Draw Pointy-Topped Hexagon
@@ -499,39 +509,57 @@ export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
   ) => {
     const width = Math.sqrt(3) * radius;
     const height = 2 * radius;
-    const left = x - width / 2;
-    const top = y - height / 2;
+    // Hochauflösende Kacheln (Lava/Berge) enthalten einen transparenten Rand.
+    // Der Bleed-Faktor vergrößert die Zeichenfläche so, dass die sichtbare
+    // Hex-Fläche wieder exakt auf dem Raster landet.
+    const bleed = art.bleed && Number.isFinite(art.bleed) ? Math.max(1, art.bleed) : 1;
+    const drawWidth = width * bleed;
+    const drawHeight = height * bleed;
+    const left = x - drawWidth / 2;
+    const top = y - drawHeight / 2;
 
     ctx.save();
     drawHexagon(ctx, x, y, radius);
     ctx.clip();
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = bleed > 1;
 
     if (art.placeholder) {
-      drawPlaceholderTile(ctx, art.placeholder, tile, left, top, width, height, planet);
+      drawPlaceholderTile(
+        ctx,
+        art.placeholder,
+        tile,
+        x - width / 2,
+        y - height / 2,
+        width,
+        height,
+        planet
+      );
     } else {
+      // Immer zuerst die Fallback-Farbe anlegen, damit transparente Ränder
+      // oder noch nicht geladene Assets nie den Hintergrund durchscheinen
+      // lassen.
+      ctx.fillStyle = art.fallbackColor;
+      ctx.fillRect(x - width / 2, y - height / 2, width, height);
+
       const baseImage = art.base ? getSurfaceTileImage(art.base) : null;
       if (baseImage) {
-        ctx.drawImage(baseImage, left, top, width, height);
-      } else {
-        ctx.fillStyle = art.fallbackColor;
-        ctx.fillRect(left, top, width, height);
+        ctx.drawImage(baseImage, left, top, drawWidth, drawHeight);
       }
 
       if (art.overlay) {
         const overlayImage = getSurfaceTileImage(art.overlay);
         if (overlayImage) {
-          ctx.drawImage(overlayImage, left, top, width, height);
+          ctx.drawImage(overlayImage, left, top, drawWidth, drawHeight);
         }
       }
 
       if (art.tint) {
         ctx.fillStyle = art.tint;
-        ctx.fillRect(left, top, width, height);
+        ctx.fillRect(x - width / 2, y - height / 2, width, height);
       }
 
       if (art.emblem === 'crater') {
-        drawCraterEmblem(ctx, left, top, width, height);
+        drawCraterEmblem(ctx, x - width / 2, y - height / 2, width, height);
       }
     }
 
@@ -1062,12 +1090,14 @@ export const PlanetSurfaceCanvas: React.FC<PlanetSurfaceCanvasProps> = ({
 
       {/* Surface Navigation Overlay */}
       <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
-        <button
-          onClick={onBackToSystem}
-          className="px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-cyan-400 hover:text-cyan-300 border border-slate-700/80 rounded-md text-xs font-mono flex items-center gap-1.5 shadow-lg backdrop-blur cursor-pointer transition-colors"
-        >
-          <span>← Zurück zum System</span>
-        </button>
+        {showBackButton && (
+          <button
+            onClick={onBackToSystem}
+            className="px-3 py-1.5 bg-slate-900/90 hover:bg-slate-800 text-cyan-400 hover:text-cyan-300 border border-slate-700/80 rounded-md text-xs font-mono flex items-center gap-1.5 shadow-lg backdrop-blur cursor-pointer transition-colors"
+          >
+            <span>← {backLabel}</span>
+          </button>
+        )}
 
         <div className="px-3 py-1.5 bg-slate-900/90 border border-slate-800/80 rounded-md text-xs font-mono text-slate-300 backdrop-blur shadow-lg">
           <span className="text-slate-500">Planet:</span> <strong className="text-slate-100">{planet.name}</strong> ·{' '}

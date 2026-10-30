@@ -6,19 +6,34 @@
  * normalisiert, damit die reine Mapping-Schicht nur mit Namen arbeitet.
  */
 
-// Nur die einzelnen TILE_*-Kacheln einbinden, nicht die großen
-// Referenz-Spritesheets (eisplanet_hex_tileset, schnee_boden_only_tileset).
-const modules = import.meta.glob('../../Tilesets/Planetenbiome/**/TILE_*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>;
+// Nur die einzelnen Kacheln einbinden, nicht die großen Referenz-Spritesheets
+// (eisplanet_hex_tileset, schnee_boden_only_tileset). Die Lava-Dateien liegen
+// als einzelne, hochauflösende Hex-Kacheln vor und werden über dieselbe
+// Namensnormalisierung wie die TILE_*-Assets angesprochen.
+const modules = import.meta.glob(
+  [
+    '../../Tilesets/Planetenbiome/**/TILE_*.png',
+    '../../Tilesets/Planetenbiome/Lava/lava_tile_*.png',
+    '../../Tilesets/Planetenbiome/Lava/mountain_hex_*.png',
+  ],
+  {
+    eager: true,
+    query: '?url',
+    import: 'default',
+  }
+) as Record<string, string>;
 
 const tileUrls = new Map<string, string>();
 
 for (const path of Object.keys(modules).sort()) {
   const fileName = path.split('/').pop() ?? path;
-  const name = fileName.replace(/\.png$/i, '').toUpperCase();
+  const name = fileName
+    .replace(/\.png$/i, '')
+    .toUpperCase()
+    // Skalierungssuffixe der Lava-/Bergkacheln entfernen, damit die
+    // Mapping-Schicht stabile Namen wie LAVA_TILE_0 verwendet.
+    .replace(/_HEX_X[234]$/, '')
+    .replace(/_X[234]$/, '');
   // Bei doppelten Namen (z. B. TILE_FRESHWATER in zwei Ordnern) gewinnt der
   // lexikografisch erste Pfad; die Varianten sind optisch austauschbar.
   if (!tileUrls.has(name)) {

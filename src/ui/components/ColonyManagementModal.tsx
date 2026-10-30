@@ -958,14 +958,32 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
                 ) : (
                   <div className="space-y-2">
                     {colony.buildQueue.map((item, idx) => {
-                      const progPercent = Math.min(
-                        100,
-                        Math.round((item.investedProduction / item.requiredProduction) * 100)
-                      );
-                      const turnsLeft = Math.ceil(
-                        (item.requiredProduction - item.investedProduction) /
-                          Math.max(1, colony.netYields.production)
-                      );
+                      const required = Number.isFinite(item.requiredProduction)
+                        ? Math.max(0, item.requiredProduction)
+                        : 0;
+                      const invested = Number.isFinite(item.investedProduction)
+                        ? Math.max(0, item.investedProduction)
+                        : 0;
+                      const productionPerTurn = Number.isFinite(colony.netYields.production)
+                        ? Math.max(1, colony.netYields.production)
+                        : 1;
+                      const progPercent =
+                        required <= 0
+                          ? 100
+                          : Math.min(100, Math.round((invested / required) * 100));
+                      const turnsLeft =
+                        required <= invested
+                          ? 0
+                          : Math.ceil((required - invested) / productionPerTurn);
+                      // Ein Auftrag ohne Bauzeit ist kein hängender 0-Runden-
+                      // Auftrag, sondern wird beim nächsten Rundenwechsel
+                      // ausdrücklich abgeschlossen.
+                      const timeLabel =
+                        required <= 0
+                          ? 'Abschluss beim Rundenwechsel'
+                          : turnsLeft <= 0
+                            ? 'abschlussbereit'
+                            : `~${turnsLeft} Runde(n)`;
                       return (
                         <div key={item.id} className="p-3 bg-slate-950 border border-slate-800 rounded-lg space-y-1.5">
                           <div className="flex items-center justify-between text-xs">
@@ -973,7 +991,7 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
                               #{idx + 1} {item.name}
                             </span>
                             <span className="font-mono text-cyan-400 text-[11px]">
-                              ~{turnsLeft} Runde(n) ({item.investedProduction}/{item.requiredProduction})
+                              {timeLabel} ({invested}/{required})
                             </span>
                           </div>
                           <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
@@ -1163,6 +1181,10 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
                       const nextLevel = bInst.level + 1;
                       const upMineral = Math.round(bDef.baseMineralCost * 0.75 * nextLevel);
                       const upCredits = Math.round((bDef.creditCost ?? 0) * 0.75 * nextLevel);
+                      const upProduction = BuildQueueManager.getUpgradeProductionCost(
+                        bDef,
+                        nextLevel
+                      );
                       const gainParts = (Object.entries(bDef.yieldsPerLevel) as [keyof ResourceYields, number][])
                         .filter(([, value]) => (value ?? 0) > 0)
                         .map(([resource, value]) => `+${value} ${RESOURCE_LABELS[resource]}`);
@@ -1206,7 +1228,10 @@ export const ColonyManagementModal: React.FC<ColonyManagementModalProps> = ({
                               onClick={() => onQueueUpgrade(colony.id, bInst.id)}
                               className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 rounded text-xs font-mono cursor-pointer transition-colors"
                             >
-                              Ausbauen Stufe {nextLevel} · {upMineral} 🪨
+                              {upProduction > 0
+                                ? `Ausbauen Stufe ${nextLevel}`
+                                : `Sofort aufwerten auf Stufe ${nextLevel}`}{' '}
+                              · {upMineral} 🪨
                               {upCredits > 0 && ` · ${upCredits} ◈`}
                             </button>
                           )}

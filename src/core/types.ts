@@ -389,11 +389,21 @@ export interface BuildProject {
   id: string;
   colonyId: string;
   type: 'building' | 'upgrade' | 'unit';
+  /**
+   * Bei `building`/`unit` die Katalog-ID, bei `upgrade` die ID der
+   * Gebäudeinstanz. `buildingDefId` hält bei Ausbauten zusätzlich die
+   * Katalog-ID, damit ein Auftrag auch nach einer ID-Migration wieder
+   * eindeutig aufgelöst werden kann.
+   */
   defId: string;
+  buildingInstanceId?: string;
+  buildingDefId?: string;
   targetHexCoord: HexCoord;
   name: string;
   investedProduction: number;
   requiredProduction: number;
+  /** Zielstufe eines Ausbaus; verhindert doppelte Stufenanwendung. */
+  targetLevel?: number;
   mineralCost: number;
   rareCost: number;
   /** Beim Einreihen aus der Staatskasse bezahlte Credits (Wirtschaft Stufe B) */

@@ -7,6 +7,7 @@ import { BUILDING_CATALOG } from '../data/buildingCatalog.ts';
 import { UNIT_CATALOG } from '../data/unitCatalog.ts';
 import { HexMath } from '../surface/hexMath.ts';
 import {
+  BuildingDef,
   BuildingInstance,
   BuildProject,
   Colony,
@@ -15,7 +16,106 @@ import {
   SurfaceUnit,
 } from './types.ts';
 
+export interface QueueUpgradeResult {
+  success: boolean;
+  reason?: string;
+  /** true, wenn die Aufwertung ohne Wartezeit sofort abgeschlossen wurde. */
+  completedImmediately?: boolean;
+  /** Der erzeugte (ggf. sofort abgeschlossene) Auftrag. */
+  project?: BuildProject;
+}
+
 export class BuildQueueManager {
+  /**
+   * Einheitliche Bauzeitformel für Ausbauten. Sie wird von der Auftragserstellung
+   * und der Wiederherstellung alter Aufträge gemeinsam genutzt, damit Anzeige,
+   * Warteschlange und Fertigstellung nicht auseinanderlaufen.
+   */
+  public static getUpgradeProductionCost(bDef: BuildingDef, nextLevel: number): number {
+    const cost = Math.round(bDef.baseProductionCost * 0.8 * nextLevel);
+    return Number.isFinite(cost) ? Math.max(0, cost) : 0;
+  }
+
+  /**
+   * Löst die zu einem Ausbauauftrag gehörende Gebäudeinstanz auf. Ältere
+   * Spielstände können eine veraltete Instanz-ID enthalten; dann greifen die
+   * Katalog-ID und das Zielfeld als stabile Ersatzkriterien.
+   */
+  private static resolveUpgradeInstance(
+    colony: Colony,
+    project: BuildProject
+  ): BuildingInstance | undefined {
+    const direct = colony.buildings.find((b) => b.id === project.defId);
+    if (direct) return direct;
+    if (!project.buildingDefId) return undefined;
+    const sameDefinition = colony.buildings.filter(
+      (b) => b.buildingDefId === project.buildingDefId
+    );
+    const byInstanceId = sameDefinition.find((b) => b.id === project.buildingInstanceId);
+    if (byInstanceId) return byInstanceId;
+    const targetKey = HexMath.coordToKey(project.targetHexCoord);
+    return sameDefinition.find((b) => HexMath.coordToKey(b.hexCoord) === targetKey);
+  }
+
+  /**
+   * Ermittelt die tatsächlich benötigte Produktion eines Auftrags. Ungültige
+   * oder fehlende Werte werden aus den vorhandenen Katalogdaten rekonstruiert,
+   * statt die Warteschlange mit NaN oder 0 dauerhaft zu blockieren.
+   */
+  public static resolveRequiredProduction(colony: Colony, project: BuildProject): number {
+    if (Number.isFinite(project.requiredProduction) && project.requiredProduction > 0) {
+      return project.requiredProduction;
+    }
+
+    let resolved = 0;
+    if (project.type === 'upgrade') {
+      const instance = BuildQueueManager.resolveUpgradeInstance(colony, project);
+      const bDef =
+        (instance ? BUILDING_CATALOG[instance.buildingDefId] : undefined) ??
+        (project.buildingDefId ? BUILDING_CATALOG[project.buildingDefId] : undefined);
+      if (bDef && instance) {
+        resolved = BuildQueueManager.getUpgradeProductionCost(bDef, instance.level + 1);
+      }
+    } else if (project.type === 'building') {
+      resolved = BUILDING_CATALOG[project.defId]?.baseProductionCost ?? 0;
+    } else if (project.type === 'unit') {
+      resolved = UNIT_CATALOG[project.defId]?.productionCost ?? 0;
+    }
+
+    if (!Number.isFinite(resolved) || resolved < 0) resolved = 0;
+    project.requiredProduction = resolved;
+    return resolved;
+  }
+
+  /**
+   * Repariert gespeicherte Warteschlangen nach dem Laden: unendliche/fehlende
+   * Fortschritte werden auf 0 gesetzt, Bauzeiten aus Katalogdaten ergänzt und
+   * doppelte Ausbauaufträge für dieselbe Instanz entfernt. Die eigentliche
+   * Fertigstellung bleibt der Rundenphase vorbehalten.
+   */
+  public static normalizeBuildQueue(colony: Colony): void {
+    if (!Array.isArray(colony.buildQueue)) {
+      colony.buildQueue = [];
+      return;
+    }
+
+    const seenUpgrades = new Set<string>();
+    colony.buildQueue = colony.buildQueue.filter((project) => {
+      if (!Number.isFinite(project.investedProduction) || project.investedProduction < 0) {
+        project.investedProduction = 0;
+      }
+      if (project.type === 'upgrade') {
+        const instance = BuildQueueManager.resolveUpgradeInstance(colony, project);
+        const key = instance?.id ?? project.buildingInstanceId ?? project.defId;
+        if (seenUpgrades.has(key)) return false;
+        seenUpgrades.add(key);
+        if (instance && !project.buildingInstanceId) project.buildingInstanceId = instance.id;
+        if (instance && !project.buildingDefId) project.buildingDefId = instance.buildingDefId;
+      }
+      BuildQueueManager.resolveRequiredProduction(colony, project);
+      return true;
+    });
+  }
   /**
    * Prüft, ob ein Gebäude auf dem angegebenen Hexfeld errichtet werden darf.
    * Wird von der Warteschlange und der UI gemeinsam genutzt, damit Anzeige
@@ -207,7 +307,7 @@ export class BuildQueueManager {
     buildingInstanceId: string,
     currentTurn: number,
     treasuryHolder?: { treasury: number }
-  ): { success: boolean; reason?: string } {
+  ): QueueUpgradeResult {
     const instance = colony.buildings.find((b) => b.id === buildingInstanceId);
     if (!instance) return { success: false, reason: 'Gebäudeinstanz nicht gefunden.' };
 
@@ -218,10 +318,25 @@ export class BuildQueueManager {
       return { success: false, reason: `Gebäude hat maximale Ausbaustufe (${bDef.maxLevel}) bereits erreicht.` };
     }
 
+    const duplicate = colony.buildQueue.find(
+      (project) =>
+        project.type === 'upgrade' &&
+        (project.buildingInstanceId === instance.id ||
+          project.defId === instance.id ||
+          (project.buildingDefId === instance.buildingDefId &&
+            HexMath.coordToKey(project.targetHexCoord) === HexMath.coordToKey(instance.hexCoord)))
+    );
+    if (duplicate) {
+      return {
+        success: false,
+        reason: `Für ${bDef.name} ist bereits ein Ausbau in der Warteschlange.`,
+      };
+    }
+
     const nextLevel = instance.level + 1;
     const upgradeMineralCost = Math.round(bDef.baseMineralCost * 0.75 * nextLevel);
     const upgradeRareCost = Math.round(bDef.baseRareCost * nextLevel);
-    const upgradeProductionCost = Math.round(bDef.baseProductionCost * 0.8 * nextLevel);
+    const upgradeProductionCost = BuildQueueManager.getUpgradeProductionCost(bDef, nextLevel);
     const upgradeCreditCost = Math.round((bDef.creditCost ?? 0) * 0.75 * nextLevel);
 
     if (colony.stockpile.minerals < upgradeMineralCost) {
@@ -254,18 +369,30 @@ export class BuildQueueManager {
       colonyId: colony.id,
       type: 'upgrade',
       defId: instance.id, // Reference to instance
+      buildingInstanceId: instance.id,
+      buildingDefId: instance.buildingDefId,
       targetHexCoord: instance.hexCoord,
       name: `${bDef.name} (Stufe ${nextLevel})`,
       investedProduction: 0,
       requiredProduction: upgradeProductionCost,
+      targetLevel: nextLevel,
       mineralCost: upgradeMineralCost,
       rareCost: upgradeRareCost,
       creditCost: upgradeCreditCost,
       turnStarted: currentTurn,
     };
 
+    // Ein Ausbau ohne definierte Bauzeit (z. B. das Koloniezentrum mit
+    // baseProductionCost 0) wird ausdrücklich sofort abgeschlossen. Er darf
+    // nicht als 0-Runden-Eintrag in der Warteschlange stehen bleiben, der
+    // scheinbar nie fertig wird.
+    if (upgradeProductionCost <= 0) {
+      instance.level = Math.min(nextLevel, bDef.maxLevel);
+      return { success: true, completedImmediately: true, project };
+    }
+
     colony.buildQueue.push(project);
-    return { success: true };
+    return { success: true, project };
   }
 
   /**
@@ -337,58 +464,100 @@ export class BuildQueueManager {
     if (colony.buildQueue.length === 0) return { completedProject: null };
 
     const activeProject = colony.buildQueue[0];
-    activeProject.investedProduction += Math.max(1, productionPoints);
+    if (!Number.isFinite(activeProject.investedProduction) || activeProject.investedProduction < 0) {
+      activeProject.investedProduction = 0;
+    }
 
-    if (activeProject.investedProduction >= activeProject.requiredProduction) {
-      // Completed!
+    const required = BuildQueueManager.resolveRequiredProduction(colony, activeProject);
+    const safeProduction = Number.isFinite(productionPoints) ? Math.max(1, productionPoints) : 1;
+
+    // Altbestände mit 0 Runden (früher durch baseProductionCost 0 entstanden)
+    // werden beim nächsten Rundenwechsel ausdrücklich abgeschlossen. Sie
+    // bekommen keine negative oder unendliche Restzeit und blockieren die
+    // Warteschlange nicht dauerhaft.
+    const isImmediatelyComplete = required <= activeProject.investedProduction;
+
+    if (!isImmediatelyComplete) {
+      activeProject.investedProduction += safeProduction;
+    }
+
+    if (activeProject.investedProduction >= required) {
       colony.buildQueue.shift();
-
-      if (activeProject.type === 'building') {
-        const buildingInstanceId = `bld-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        const newInstance: BuildingInstance = {
-          id: buildingInstanceId,
-          colonyId: colony.id,
-          hexCoord: activeProject.targetHexCoord,
-          buildingDefId: activeProject.defId,
-          level: 1,
-          isActive: true,
-        };
-
-        colony.buildings.push(newInstance);
-        const tileKey = HexMath.coordToKey(activeProject.targetHexCoord);
-        const tile = surface.tiles.find((t) => t.key === tileKey);
-        if (tile) {
-          tile.buildingInstanceId = buildingInstanceId;
-        }
-
-        return { completedProject: activeProject };
-      } else if (activeProject.type === 'upgrade') {
-        const instance = colony.buildings.find((b) => b.id === activeProject.defId);
-        if (instance) {
-          instance.level += 1;
-        }
-        return { completedProject: activeProject };
-      } else if (activeProject.type === 'unit') {
-        const uDef = UNIT_CATALOG[activeProject.defId];
-        const newUnit: SurfaceUnit = {
-          id: `unit-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          civId: colony.civId,
-          unitDefId: activeProject.defId,
-          name: `${uDef.name} (${colony.name})`,
-          planetId: colony.planetId,
-          hexCoord: activeProject.targetHexCoord,
-          movementPointsRemaining: uDef.movementPoints,
-          maxMovementPoints: uDef.movementPoints,
-          health: uDef.combatStrength * 10,
-          maxHealth: uDef.combatStrength * 10,
-          isFortified: false,
-        };
-
-        unitsList.push(newUnit);
-        return { completedProject: activeProject, spawnedUnit: newUnit };
-      }
+      return BuildQueueManager.completeProject(colony, activeProject, surface, unitsList);
     }
 
     return { completedProject: null };
+  }
+
+  /**
+   * Führt die Wirkung eines fertigen Auftrags genau einmal aus. Die Zielstufe
+   * wird absolut gesetzt, damit ein erneut verarbeiteter Auftrag keine zweite
+   * Stufe freischalten kann.
+   */
+  private static completeProject(
+    colony: Colony,
+    project: BuildProject,
+    surface: PlanetSurface,
+    unitsList: SurfaceUnit[]
+  ): { completedProject: BuildProject | null; spawnedUnit?: SurfaceUnit } {
+    if (project.type === 'building') {
+      const buildingInstanceId = `bld-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const newInstance: BuildingInstance = {
+        id: buildingInstanceId,
+        colonyId: colony.id,
+        hexCoord: project.targetHexCoord,
+        buildingDefId: project.defId,
+        level: 1,
+        isActive: true,
+      };
+
+      colony.buildings.push(newInstance);
+      const tileKey = HexMath.coordToKey(project.targetHexCoord);
+      const tile = surface.tiles.find((t) => t.key === tileKey);
+      if (tile) {
+        tile.buildingInstanceId = buildingInstanceId;
+      }
+
+      return { completedProject: project };
+    }
+
+    if (project.type === 'upgrade') {
+      const instance = BuildQueueManager.resolveUpgradeInstance(colony, project);
+      if (instance) {
+        const bDef = BUILDING_CATALOG[instance.buildingDefId];
+        const maxLevel = bDef?.maxLevel ?? Number.POSITIVE_INFINITY;
+        const targetLevel = Math.min(
+          maxLevel,
+          project.targetLevel ?? instance.level + 1
+        );
+        if (instance.level < targetLevel) {
+          instance.level = targetLevel;
+        }
+      }
+      return { completedProject: project };
+    }
+
+    if (project.type === 'unit') {
+      const uDef = UNIT_CATALOG[project.defId];
+      if (!uDef) return { completedProject: project };
+      const newUnit: SurfaceUnit = {
+        id: `unit-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        civId: colony.civId,
+        unitDefId: project.defId,
+        name: `${uDef.name} (${colony.name})`,
+        planetId: colony.planetId,
+        hexCoord: project.targetHexCoord,
+        movementPointsRemaining: uDef.movementPoints,
+        maxMovementPoints: uDef.movementPoints,
+        health: uDef.combatStrength * 10,
+        maxHealth: uDef.combatStrength * 10,
+        isFortified: false,
+      };
+
+      unitsList.push(newUnit);
+      return { completedProject: project, spawnedUnit: newUnit };
+    }
+
+    return { completedProject: project };
   }
 }

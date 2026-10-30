@@ -5,6 +5,7 @@
  */
 
 import { BUILDING_CATALOG } from '../data/buildingCatalog.ts';
+import { BuildQueueManager } from './buildQueueManager.ts';
 import { HexMath } from '../surface/hexMath.ts';
 import { SurfaceGenerator } from '../surface/surfaceGenerator.ts';
 import { SurfaceManager } from '../surface/surfaceManager.ts';
@@ -468,6 +469,10 @@ export class ColonyManager {
         if (c.corruption === undefined) c.corruption = 0;
         if (c.approval === undefined) c.approval = 50;
         if (c.taxRevenue === undefined) c.taxRevenue = 0;
+
+        // Gespeicherte Bauaufträge reparieren (fehlende Bauzeiten, doppelte
+        // Ausbauten, ungültiger Fortschritt), ohne sie vorzeitig abzuschließen.
+        BuildQueueManager.normalizeBuildQueue(c);
 
         this.colonies.set(c.id, c);
       });

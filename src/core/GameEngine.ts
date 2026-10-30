@@ -814,7 +814,10 @@ export class GameEngine {
     return res;
   }
 
-  public queueUpgrade(colonyId: string, buildingInstanceId: string): { success: boolean; reason?: string } {
+  public queueUpgrade(
+    colonyId: string,
+    buildingInstanceId: string
+  ): ReturnType<typeof BuildQueueManager.queueUpgrade> {
     const colony = this.colonyManager.getColonyById(colonyId);
     if (!colony) return { success: false, reason: 'Kolonie nicht gefunden.' };
 
@@ -823,7 +826,13 @@ export class GameEngine {
     const treasuryHolder = this.civManager.getCivilizations().find((c) => c.id === colony.civId);
     const res = BuildQueueManager.queueUpgrade(colony, buildingInstanceId, turn, treasuryHolder);
     if (res.success) {
-      this.eventBus.emit('build:queued', { colonyId, buildingInstanceId });
+      if (res.completedImmediately && res.project) {
+        // Sofortige Ausbauten laufen durch dieselbe Abschlussmeldung wie
+        // Aufträge, die am Rundenende fertig werden.
+        this.emitBuildCompletion(colony, res.project);
+      } else {
+        this.eventBus.emit('build:queued', { colonyId, buildingInstanceId });
+      }
     }
     return res;
   }
@@ -978,7 +987,19 @@ export class GameEngine {
       this.colonyManager.getColonies()
     );
     for (const colony of this.colonyManager.getColonies()) {
-      const surface = this.surfaceManager.getSurface(colony.planetId);
+      // Alte Spielstände können eine Kolonie ohne gespeicherte Oberfläche
+      // enthalten. Statt die gesamte Koloniephase (inklusive Bauwarteschlange)
+      // stillschweigend zu überspringen, wird die deterministische Oberfläche
+      // aus dem Galaxie-Seed rekonstruiert.
+      let surface = this.surfaceManager.getSurface(colony.planetId);
+      if (!surface) {
+        const planet = this.galaxy.systems
+          .flatMap((system) => system.planets ?? [])
+          .find((candidate) => candidate.id === colony.planetId);
+        if (planet) {
+          surface = this.surfaceManager.getOrCreateSurface(planet, this.galaxy.seed);
+        }
+      }
       if (surface) {
         // Find planet habitability
         let habitability = 80;
@@ -1172,10 +1193,24 @@ export class GameEngine {
 
     let name = project.name;
     if (project.type === 'upgrade') {
-      const instance = colony.buildings.find((building) => building.id === project.defId);
-      const buildingDef = instance ? BUILDING_CATALOG[instance.buildingDefId] : undefined;
+      const instance =
+        colony.buildings.find((building) => building.id === project.defId) ??
+        colony.buildings.find((building) => building.id === project.buildingInstanceId) ??
+        (project.buildingDefId
+          ? colony.buildings.find(
+              (building) =>
+                building.buildingDefId === project.buildingDefId &&
+                HexMath.coordToKey(building.hexCoord) ===
+                  HexMath.coordToKey(project.targetHexCoord)
+            )
+          : undefined);
+      const buildingDef = instance
+        ? BUILDING_CATALOG[instance.buildingDefId]
+        : project.buildingDefId
+          ? BUILDING_CATALOG[project.buildingDefId]
+          : undefined;
       if (buildingDef) {
-        name = `${buildingDef.name} (Stufe ${instance!.level})`;
+        name = `${buildingDef.name} (Stufe ${instance?.level ?? project.targetLevel ?? 1})`;
       }
     }
 

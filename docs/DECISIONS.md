@@ -1460,3 +1460,34 @@ Das Kolonie-Kommando war einreihig aufgebaut, die Ressourcenleiste lief über di
 - **Bekannte Einschränkung:** Für Korvette und Zerstörer fehlen eigene Grafiken; beide nutzen die Fregatte. `Transporter.png` gehört zu keiner definierten Klasse.
 - **Bekannte Einschränkung:** `Forschung.jpeg` und `Kolonie.jpg` sind JPEGs ohne Transparenz und wirken daher als Porträtkacheln, nicht als freigestellte Silhouetten.
 - **Bekannte Einschränkung:** Der Koloniekomplex ist bewusst größer als eine Kachel und kann bei dicht benachbarten Stadtzentren visuell überlappen; die Klicklogik bleibt kachelbasiert.
+
+## ADR-056: Lava-Tiles, Koloniezentrum-Aufwertung und isoliertes Testlabor
+
+### Kontext
+Drei Probleme trafen zusammen. Erstens lagen unter `Tilesets/Planetenbiome/Lava` echte, hochauflösende Lavakacheln, die der Renderer nicht einband: `lava` und `volcanic` wurden weiterhin als prozedurale Platzhalter gezeichnet, obwohl die Generierung diese Biome auf Vulkanwelten tatsächlich erzeugt. Zweitens blieb die Aufwertung des Koloniezentrums dauerhaft bei „0 Runden" stehen. Ursache war kein Zeit- oder GUI-Fehler, sondern `BUILDING_CATALOG.city_center.baseProductionCost = 0`: Daraus folgte `requiredProduction = 0`, der Auftrag wurde in die Warteschlange gelegt, aber `advanceQueue` addierte zuerst Produktion und verglich danach – der Eintrag blieb scheinbar ewig offen. Drittens fehlte ein Weg, Generator- und Mechanikverhalten ohne laufende Kampagne reproduzierbar zu prüfen.
+
+### Entscheidung
+- **Lava-Tiles über das bestehende Asset-System.** `src/ui/surfaceTileAssets.ts` bindet zusätzlich `Lava/lava_tile_*.png` und `Lava/mountain_hex_*.png` per `import.meta.glob` ein und normalisiert nur die Skalierungssuffixe (`_HEX_X4`, `_X3`). `src/ui/surfaceTileMapping.ts` ordnet zu: `lava` → `LAVA_TILE_2/0` (unpassierbar), `volcanic` → `LAVA_TILE_1/3/BASALT`, höheres `volcanic` → `LAVA_TILE_0`, Vulkanberge → `MOUNTAIN_HEX_0..3`, Vulkanhügel → Lavakruste plus `MOUNTAIN_HEX_3/1`, geschützte Landezone auf Vulkanwelten → Basalt. Die Kacheln besitzen einen transparenten Rand; ein `bleed`-Faktor von 1,18 vergrößert die Zeichenfläche, sodass die sichtbare Hex-Fläche exakt im Raster sitzt. Fehlt ein Bild, füllt weiterhin die `fallbackColor`; Gas-, Gift- und Fremdbiome behalten ihre Platzhalter.
+- **Eine Bauzeitformel, ein Abschlussweg.** `BuildQueueManager.getUpgradeProductionCost()` ist die einzige Quelle für Ausbau-Bauzeit (`round(baseProductionCost * 0.8 * Zielstufe)`); GUI und Engine verwenden sie. Ausbauten mit Bauzeit 0 werden nicht eingereiht, sondern sofort abgeschlossen und über dieselbe Abschlussmeldung gemeldet (`completedImmediately`). Altbestände mit `requiredProduction = 0` werden beim nächsten Rundenwechsel kontrolliert abgeschlossen. `resolveRequiredProduction()` rekonstruiert fehlende oder ungültige Werte aus dem Katalog, `normalizeBuildQueue()` repariert beim Laden Fortschritt, Bauzeit und Duplikate. Ausbauten tragen `buildingInstanceId`, `buildingDefId` und `targetLevel`; die Zielstufe wird absolut gesetzt, sodass ein erneut verarbeiteter Auftrag keine zweite Stufe freischaltet.
+- **Isoliertes Testlabor (`src/testing`).** Das Hauptmenü erhält den Eintrag „Testing" (`appMode: 'testing'`). `TestLab.tsx` ist eine eigenständige Shell mit `testLabRegistry.tsx`; jeder Ballon ist eine Komponente mit `onBackToMenu`. Der erste Ballon („Prozedurale Planetenoberfläche") erzeugt einen synthetischen Testplaneten und ruft den echten `SurfaceGenerator.generateSurface` mit Planetentyp, Breite (6–32), Höhe (6–24) und Seed auf. Er zeigt Signatur, Reproduzierbarkeitsvergleich, Canvas mit Zoom/Pan, Kachel-Info ohne Kolonieaktionen, Ressourcen-Toggle sowie echte Biome-, Vorkommens-, Gefahren-, Unpassierbarkeits-, Fluss-/Seen- und Höhenstatistiken. Kacheln werden nur in der Testansicht `visible` geschaltet und Vorkommen aufgedeckt.
+- **Unverändert:** Katalogwerte, Generierungsbalance, Save-Format, Rundenlogik und Kampagnenzustand. Das Testlabor schreibt keine Spielstände und ruft keine Engine-Rundenlogik auf.
+
+### Begründung
+- Die Lavagrafiken waren bereits vorhanden; eine Einbindung über die bestehende Namensnormalisierung vermeidet ein paralleles Tileset-System und lässt weitere Biome nach demselben Muster ergänzen.
+- Die 0-Runden-Ursache lag in den Daten, nicht in der Anzeige. Ein Sonderfall „sofort fertig" ist ehrlicher als eine erfundene Bauzeit und verhindert den hängenden Warteschlangeneintrag an der Wurzel.
+- Absolute Zielstufen und Duplikatprüfung verhindern doppelte Aufwertungen, ohne das Save-Format zu brechen; alte Aufträge bleiben ladbar.
+- Ein eigenständiges Testlabor mit Registry erlaubt weitere Ballons ohne Eingriff in Kampagnen-UI und ohne Testdaten in Spielständen.
+
+### Alternativen
+- Lava weiter als Platzhalter zeichnen: verworfen, die Assets liegen vor und die Anforderung nennt sie ausdrücklich.
+- `city_center.baseProductionCost` auf einen Wert > 0 setzen: verworfen, das hätte Kosten und Balance erfunden und die Datenquelle verfälscht.
+- 0-Runden-Aufträge in der GUI nur als „fertig" anzeigen: verworfen, der Auftrag wäre weiterhin nie abgeschlossen worden.
+- Testlabor als Modal im laufenden Spiel: verworfen, damit wären Kampagnenzustand und Testdaten vermischt.
+- Tests nur über Vitest: verworfen, die Oberfläche und das Rendering mussten zusätzlich im Browser geprüft werden.
+
+### Konsequenzen
+- Neue Tests: `tests/cityCenterUpgrade.test.tsx` (10 Fälle: Stufe 1→2, 2→3, Maximalstufe, reguläre Bauzeit über mehrere Runden, einmaliger Abschluss, Legacy-0-Runden, Duplikat, Save/Load, fehlende Oberfläche, GUI-Restzeit, Katalogtreue), `tests/lavaTiles.test.ts` (3 Fälle) und `tests/testLab.test.tsx` (9 Fälle); `tests/surface_tiles.test.ts` deckt Lava-/Vulkanzuordnung ab.
+- Suite: **513 Tests in 47 Dateien** grün; `npm run lint` und `npm run build` sauber (nur die bestehende Chunk-Größenwarnung).
+- Headless-Chrome-Abnahme: Menü → Testing → Oberflächenballon → Generieren zeigt echte Lavakacheln (18 × 10, 180 Kacheln, Signatur `958beb5b`), zweiter Lauf meldet „identisch", ungültige Breite zeigt „Breite muss zwischen 6 und 32 liegen.", Zurücksetzen stellt Standardwerte her und entfernt das Ergebnis, Rückkehr zu Testauswahl und Hauptmenü funktioniert, keine Konsolenfehler.
+- **Bekannte Einschränkung:** Vulkanwelten des Generators bestehen mit dem Standard-Seed zu rund 77 % aus unpassierbarem Lavasee (Vulkanismus-Schwelle). Das ist bestehendes Generierungsverhalten und wurde bewusst nicht verändert; der Testballon macht es nur sichtbar.
+- **Bekannte Einschränkung:** Es gibt fünf Lava- und vier Bergkacheln; große Oberflächen wiederholen Varianten sichtbar. Weitere Biomballons (Tiles, Gelände, Kolonie, Bewegung, Save/Load) sind in der Registry als „geplant" geführt.

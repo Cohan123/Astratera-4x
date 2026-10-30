@@ -36,6 +36,7 @@ import { ColonyManagementModal, type ColonyModalTab } from './ui/components/Colo
 import { GalaxyCreationScreen, type StartGameOptions } from './ui/components/GalaxyCreationScreen.tsx';
 import { GalaxyMapCanvas } from './ui/components/GalaxyMapCanvas.tsx';
 import { MainMenu, type QuickSaveSummary } from './ui/components/MainMenu.tsx';
+import { TestLab } from './testing/TestLab.tsx';
 import { MessageLogModal } from './ui/components/MessageLogModal.tsx';
 import { NotificationStack } from './ui/components/NotificationStack.tsx';
 import { ShipInfoBar } from './ui/components/ShipInfoBar.tsx';
@@ -69,9 +70,9 @@ export default function App() {
 
   // Startbildschirm vs. laufendes Spiel. Die Engine bleibt beim Wechsel ins
   // Hauptmenü unverändert, damit „Spiel laden“ und der letzte Seed erhalten bleiben.
-  const [appMode, setAppMode] = useState<'menu' | 'creation' | 'game' | 'gameOver' | 'ended'>(
-    'menu'
-  );
+  const [appMode, setAppMode] = useState<
+    'menu' | 'creation' | 'game' | 'gameOver' | 'ended' | 'testing'
+  >('menu');
   const [creationTab, setCreationTab] = useState<'new' | 'library'>('new');
   const [isSeedLibraryOpen, setIsSeedLibraryOpen] = useState(false);
   const [seedEntries, setSeedEntries] = useState<SeedLibraryEntry[]>(() => SeedLibrary.list());
@@ -1106,6 +1107,10 @@ export default function App() {
 
   const lastSeed = seedEntries[0] ?? null;
 
+  if (appMode === 'testing') {
+    return <TestLab onExit={() => setAppMode('menu')} />;
+  }
+
   if (appMode === 'menu') {
     return (
       <>
@@ -1122,6 +1127,7 @@ export default function App() {
           onManageSeeds={() => setIsSeedLibraryOpen(true)}
           onOpenRoadmap={() => setIsRoadmapModalOpen(true)}
           onOpenTests={() => setIsTestModalOpen(true)}
+          onOpenTesting={() => setAppMode('testing')}
           onExit={handleExitGame}
           onContinueLastSeed={() => {
             if (lastSeed) handleStartFromSeed(lastSeed);
