@@ -1,0 +1,6 @@
+{
+  "name": "Astraea 4X - Galactic Foundations",
+  "description": "Modulares rundenbasiertes Sci-Fi-4X-Strategiespiel – Phase 1: Technisches Fundament, interaktive Galaxy-Karte und Rundenverwaltung.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

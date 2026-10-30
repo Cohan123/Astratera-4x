@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Astraea 4X">
+  <defs>
+    <radialGradient id="space" cx="50%" cy="42%" r="70%">
+      <stop offset="0%" stop-color="#164e63"/>
+      <stop offset="55%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </radialGradient>
+    <linearGradient id="hex" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#67e8f9"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="url(#space)"/>
+  <circle cx="128" cy="128" r="92" fill="none" stroke="#22d3ee" stroke-opacity="0.18" stroke-width="2"/>
+  <path d="M128 36 203 78v92l-75 42-75-42V78z" fill="#0f172a" stroke="url(#hex)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M128 78 146 114l40 6-29 28 7 40-36-19-36 19 7-40-29-28 40-6z" fill="#e2e8f0" filter="url(#glow)"/>
+  <circle cx="128" cy="128" r="7" fill="#fbbf24"/>
+</svg>
